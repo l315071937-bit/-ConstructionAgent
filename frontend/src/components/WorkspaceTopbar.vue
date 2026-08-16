@@ -33,7 +33,7 @@
         </button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="projects">项目管理</el-dropdown-item>
+            <el-dropdown-item command="projects">切换项目</el-dropdown-item>
             <el-dropdown-item command="settings">工作台设置</el-dropdown-item>
             <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
           </el-dropdown-menu>

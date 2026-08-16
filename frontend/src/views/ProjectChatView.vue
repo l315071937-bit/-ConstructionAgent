@@ -7,7 +7,7 @@
       @logout="logout"
       @open-evidence="openEvidencePanel"
       @open-navigation="navigationOpen = true"
-      @projects="$router.push('/projects')"
+      @projects="projectPickerOpen = true"
       @settings="settingsOpen = true"
       @switch-project="projectPickerOpen = true"
     />
@@ -190,8 +190,28 @@
         </button>
       </div>
       <template #footer>
-        <el-button @click="$router.push('/projects')">项目管理</el-button>
+        <el-button type="primary" plain @click="projectCreateOpen = true">
+          <el-icon><Plus /></el-icon>
+          新建项目
+        </el-button>
         <el-button @click="projectPickerOpen = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="projectCreateOpen" title="新建项目" width="480px">
+      <el-form label-position="top" @submit.prevent="createProject">
+        <el-form-item label="项目名称" required>
+          <el-input v-model="projectForm.name" maxlength="128" />
+        </el-form-item>
+        <el-form-item label="项目描述">
+          <el-input v-model="projectForm.description" type="textarea" :rows="3" maxlength="512" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="projectCreateOpen = false">取消</el-button>
+        <el-button type="primary" :loading="projectCreating" :disabled="!projectForm.name.trim()" @click="createProject">
+          创建并切换
+        </el-button>
       </template>
     </el-dialog>
 
@@ -295,6 +315,9 @@ const activeDocumentId = ref('')
 const contextMode = ref('files')
 const projectQuery = ref('')
 const projectPickerOpen = ref(false)
+const projectCreateOpen = ref(false)
+const projectCreating = ref(false)
+const projectForm = reactive({ name: '', description: '' })
 const settingsOpen = ref(false)
 const navigationOpen = ref(false)
 const evidenceDrawerOpen = ref(false)
@@ -813,6 +836,28 @@ async function deleteFolder(folder) {
 function selectSuggestedProject(project) {
   projectQuery.value = ''
   lockProject(project)
+}
+
+async function createProject() {
+  if (!projectForm.name.trim() || projectCreating.value) return
+  projectCreating.value = true
+  try {
+    const project = await request('POST', '/projects', {
+      name: projectForm.name.trim(),
+      description: projectForm.description.trim()
+    })
+    projects.value = [project, ...projects.value]
+    projectCreateOpen.value = false
+    projectPickerOpen.value = false
+    projectForm.name = ''
+    projectForm.description = ''
+    workspace.rememberProject(project.project_id)
+    await router.push('/projects/' + project.project_id)
+  } catch (error) {
+    ElMessage.error('项目创建失败：' + error.message)
+  } finally {
+    projectCreating.value = false
+  }
 }
 
 function chooseProjectFromChat(project) {

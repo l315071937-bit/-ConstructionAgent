@@ -5,7 +5,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: () => import('../views/LoginView.vue') },
-    { path: '/projects', component: () => import('../views/ProjectsView.vue') },
+    { path: '/projects', component: () => import('../views/WorkspaceEntryView.vue') },
     { path: '/projects/:id', component: () => import('../views/ProjectChatView.vue') },
     { path: '/', redirect: '/projects' }
   ]
