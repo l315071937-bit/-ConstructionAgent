@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from core.exceptions import AppError, NotFoundError
 from db.models import Document, DocumentFolderLink, ProjectFolder
 
-MAX_FOLDER_DEPTH = 8
+MAX_FOLDER_DEPTH = 10
 
 
 def get_folder(db: Session, project_id: int, folder_id: str) -> ProjectFolder:
@@ -37,7 +37,9 @@ def _parent_depth(db: Session, project_id: int,
         visited.add(parent.id)
         depth += 1
         if depth >= MAX_FOLDER_DEPTH:
-            raise AppError("FOLDER_DEPTH_LIMIT", "文件夹最多支持 8 层", 409)
+            raise AppError(
+                "FOLDER_DEPTH_LIMIT",
+                "文件夹最多支持 {} 层".format(MAX_FOLDER_DEPTH), 409)
         parent = (get_folder(db, project_id, parent.parent_id)
                   if parent.parent_id else None)
     return depth

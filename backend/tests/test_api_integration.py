@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 import api.v1.documents as documents_api
+import api.v1.assistant as assistant_api
 import api.v1.folders as folders_api
 import api.v1.projects as projects_api
 import api.v1.retrieval as retrieval_api
@@ -191,3 +192,22 @@ class TestFoldersAPI:
         assert resp.status_code == 204
         assert received == {"project_id": 1, "document_id": "doc-1",
                             "folder_id": "folder-1"}
+
+
+class TestAssistantAPI:
+    def test_输入路由使用当前登录用户(self, monkeypatch):
+        received = {}
+
+        def route_input(db, user_id, query):
+            received.update(user_id=user_id, query=query)
+            return {"type": "RULE_REPLY", "answer": "你好"}
+
+        monkeypatch.setattr(assistant_api.input_router_service,
+                            "route_input", route_input)
+        client = TestClient(make_app(assistant_api.router))
+
+        resp = client.post("/api/v1/assistant/route", json={"query": "你好"})
+
+        assert resp.status_code == 200
+        assert resp.json()["type"] == "RULE_REPLY"
+        assert received == {"user_id": 7, "query": "你好"}

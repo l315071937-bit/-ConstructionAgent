@@ -490,6 +490,19 @@ async function findProjectCandidates(query) {
   }
 }
 
+async function routeInput(query) {
+  return request('POST', '/assistant/route', { query })
+}
+
+function appendRoutedReply(decision) {
+  messages.value.push({
+    role: 'ai',
+    content: decision.answer || '',
+    projects: decision.projects && decision.projects.length
+      ? decision.projects : undefined
+  })
+}
+
 async function ask() {
   const query = question.value.trim()
   if (!query || thinking.value) return
@@ -498,13 +511,27 @@ async function ask() {
   thinking.value = true
   stage.value = '正在理解你的需求'
   await scrollToBottom()
-  const projectCandidates = await findProjectCandidates(query)
-  if (projectCandidates.length) {
-    messages.value.push({
-      role: 'ai',
-      content: '我找到了以下可能相关的项目。请选择一个项目，确认后我会锁定知识库，并在右侧显示该项目的全部资料。',
-      projects: projectCandidates
-    })
+  let decision = null
+  try {
+    decision = await routeInput(query)
+  } catch (error) {
+    const projectCandidates = await findProjectCandidates(query)
+    if (projectCandidates.length) {
+      decision = {
+        type: 'PROJECT_SUGGESTIONS',
+        answer: '我找到了以下可能相关的项目。请选择一个项目，确认后我会锁定知识库，并在右侧显示该项目的全部资料。',
+        projects: projectCandidates
+      }
+    }
+  }
+  if (decision && decision.type !== 'AGENT_ROUTE') {
+    appendRoutedReply(decision)
+    thinking.value = false
+    await scrollToBottom()
+    return
+  }
+  if (decision && decision.type === 'AGENT_ROUTE' && !decision.available) {
+    appendRoutedReply(decision)
     thinking.value = false
     await scrollToBottom()
     return

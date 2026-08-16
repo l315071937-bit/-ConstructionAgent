@@ -83,3 +83,16 @@ def test_深圳龙华返回三个有权限的预测项目(db):
     assert len(result) == 3
     assert {project.name for project in result} == set(names)
     assert all(project.id != 99 for project in result)
+
+
+def test_目录允许十层但拒绝第十一层(db):
+    parent = None
+    for level in range(1, 11):
+        parent = folder_service.create_folder(
+            db, 1, 7, "第{}层".format(level), parent.id if parent else None)
+
+    with pytest.raises(AppError) as too_deep:
+        folder_service.create_folder(db, 1, 7, "第11层", parent.id)
+
+    assert too_deep.value.code == "FOLDER_DEPTH_LIMIT"
+    assert "10 层" in too_deep.value.message
