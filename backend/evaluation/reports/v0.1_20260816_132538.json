@@ -1,0 +1,229 @@
+{
+  "dataset": "evaluation/datasets/v0.1_minimal.json",
+  "ran_at": "2026-08-16 13:25:38",
+  "retrieval": {
+    "recall@8": 0.976,
+    "mrr": 0.839,
+    "ndcg@8": 0.844
+  },
+  "generation": {
+    "fact_coverage": 0.853,
+    "ref_valid_ratio": 1.0,
+    "fact_traceable_ratio": 0.854
+  },
+  "threshold_sweep": {
+    "0.1": 0.773,
+    "0.15": 0.773,
+    "0.2": 0.773,
+    "0.25": 0.773,
+    "0.3": 0.773,
+    "0.35": 0.773,
+    "0.4": 0.773,
+    "0.45": 0.864,
+    "0.5": 0.909,
+    "0.55": 1,
+    "0.6": 0.909
+  },
+  "best_threshold": 0.55,
+  "current_threshold": 0.5,
+  "per_query": [
+    {
+      "id": "q01",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.684,
+      "n_ev": 8,
+      "fact_coverage": 0.0
+    },
+    {
+      "id": "q02",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 0.9558295932317544,
+      "top_score": 0.694,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q03",
+      "recall": 1.0,
+      "mrr": 0.14285714285714285,
+      "ndcg": 0.3333333333333333,
+      "top_score": 0.618,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q04",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.637,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q05",
+      "recall": 1.0,
+      "mrr": 0.5,
+      "ndcg": 0.6240505200038379,
+      "top_score": 0.687,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q06",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.593,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q07",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.686,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q08",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.691,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q09",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.697,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q10",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.655,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q11",
+      "recall": 1.0,
+      "mrr": 0.5,
+      "ndcg": 0.6309297535714575,
+      "top_score": 0.638,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q12",
+      "recall": 0.6,
+      "mrr": 1.0,
+      "ndcg": 0.6739577727076379,
+      "top_score": 0.664,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q13",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.735,
+      "n_ev": 8,
+      "fact_coverage": 0.5
+    },
+    {
+      "id": "q14",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.638,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q15",
+      "recall": 1.0,
+      "mrr": 0.125,
+      "ndcg": 0.31546487678572877,
+      "top_score": 0.622,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "q16",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 0.8065735963827293,
+      "top_score": 0.639,
+      "n_ev": 8,
+      "fact_coverage": 0.0
+    },
+    {
+      "id": "q17",
+      "recall": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "top_score": 0.578,
+      "n_ev": 8,
+      "fact_coverage": 1.0
+    },
+    {
+      "id": "o01",
+      "recall": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "top_score": 0.543,
+      "n_ev": 8,
+      "fact_coverage": null
+    },
+    {
+      "id": "o02",
+      "recall": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "top_score": 0.494,
+      "n_ev": 8,
+      "fact_coverage": null
+    },
+    {
+      "id": "o03",
+      "recall": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "top_score": 0.446,
+      "n_ev": 8,
+      "fact_coverage": null
+    },
+    {
+      "id": "o04",
+      "recall": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "top_score": 0.434,
+      "n_ev": 8,
+      "fact_coverage": null
+    },
+    {
+      "id": "o05",
+      "recall": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "top_score": 0.532,
+      "n_ev": 8,
+      "fact_coverage": null
+    }
+  ]
+}

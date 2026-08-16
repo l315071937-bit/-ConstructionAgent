@@ -14,7 +14,10 @@ def citation_accuracy(answer: str, evidences: list) -> dict:
     invalid = [r for r in refs if r < 1 or r > n_ev]
     ref_valid = 1.0 if refs and not invalid else (0.0 if invalid else 0.5)
 
-    numbers = re.findall(r"\d+(?:\.\d+)?", answer)
+    # 2026-08-16 单测修复：先剥离 [En] 引用标记再提取数字，
+    # 否则标记中的序号（如 [E1] 的 1）会污染"数字可追溯率"。
+    answer_body = re.sub(r"\[E\d+\]", "", answer)
+    numbers = re.findall(r"\d+(?:\.\d+)?", answer_body)
     cited_text = " ".join(
         ev["content"] for i, ev in enumerate(evidences, start=1)
         if i in refs) if refs else ""

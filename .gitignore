@@ -9,3 +9,5 @@ dist/
 .idea/
 .coverage
 htmlcov/
+# 评测工作文件（切片导出，不入库）
+evaluation/datasets/_chunks_p1.json

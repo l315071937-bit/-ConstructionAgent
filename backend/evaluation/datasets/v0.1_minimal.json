@@ -1,0 +1,31 @@
+{
+  "name": "ConstructionAgent V0.1 最小评测集（施工电气领域）",
+  "project_id": 1,
+  "created": "2026-08-16",
+  "k": 8,
+  "note": "relevant_chunk_ids 为金标（qrels）：基于 2026-08-16 从 Milvus 导出的真实切片人工标注；golden_facts 为回答必须覆盖的关键事实；expect_answer=false 的问题为文档外问题，正确行为是兜底而非回答。",
+  "queries": [
+    {"id": "q01", "query": "本工程一般场所的照明灯具选型采用什么？", "relevant_chunk_ids": ["fb2fe23dc47a_7_0"], "golden_facts": ["T5型LED灯", "LED悬挂灯"], "expect_answer": true},
+    {"id": "q02", "query": "施工现场临时用电采用什么接地保护系统？", "relevant_chunk_ids": ["f44965318c47_38_0", "f44965318c47_5_1", "f44965318c47_33_0", "fb2fe23dc47a_65_0"], "golden_facts": ["TN-S"], "expect_answer": true},
+    {"id": "q03", "query": "临时用电的接地电阻要求不大于多少？接地体用什么材料？", "relevant_chunk_ids": ["f44965318c47_38_0"], "golden_facts": ["4", "镀锌角钢"], "expect_answer": true},
+    {"id": "q04", "query": "现场三级配电箱利用什么电源箱供电？", "relevant_chunk_ids": ["f44965318c47_6_0"], "golden_facts": ["二级电源箱"], "expect_answer": true},
+    {"id": "q05", "query": "哪些场所需要采用局部等电位联结？", "relevant_chunk_ids": ["f44965318c47_33_0", "fb2fe23dc47a_7_0"], "golden_facts": ["卫生间", "游泳池"], "expect_answer": true},
+    {"id": "q06", "query": "灯具的相线必须经过什么控制？", "relevant_chunk_ids": ["fb2fe23dc47a_50_1"], "golden_facts": ["相线", "开关"], "expect_answer": true},
+    {"id": "q07", "query": "应急照明和疏散指示标志采用什么控制方式和供电方式？", "relevant_chunk_ids": ["fb2fe23dc47a_7_0", "fb2fe23dc47a_49_0"], "golden_facts": ["集中控制", "集中电源"], "expect_answer": true},
+    {"id": "q08", "query": "成排线管在吊顶内敷设时用什么方式固定？", "relevant_chunk_ids": ["fb2fe23dc47a_29_0"], "golden_facts": ["通丝吊杆", "横担"], "expect_answer": true},
+    {"id": "q09", "query": "电缆接线端子如何压接在设备上？", "relevant_chunk_ids": ["fb2fe23dc47a_40_0"], "golden_facts": ["螺栓", "压接"], "expect_answer": true},
+    {"id": "q10", "query": "施工过程中的计量、检测设备应如何管理？", "relevant_chunk_ids": ["fb2fe23dc47a_60_0"], "golden_facts": ["送检", "校准"], "expect_answer": true},
+    {"id": "q11", "query": "套管成品如何防止被堵塞？", "relevant_chunk_ids": ["fb2fe23dc47a_69_0"], "golden_facts": ["管帽"], "expect_answer": true},
+    {"id": "q12", "query": "应急预案中由哪个保障组负责联系120急救车？", "relevant_chunk_ids": ["fb2fe23dc47a_80_0", "fb2fe23dc47a_71_0", "fb2fe23dc47a_75_0", "fb2fe23dc47a_79_0", "fb2fe23dc47a_83_0"], "golden_facts": ["通讯信息保障组"], "expect_answer": true},
+    {"id": "q13", "query": "本施工组织设计的编制依据是什么？", "relevant_chunk_ids": ["f44965318c47_2_0"], "golden_facts": ["施工图纸", "GB 50052-2009"], "expect_answer": true},
+    {"id": "q14", "query": "全面质量管理包含哪几个层面的管理？", "relevant_chunk_ids": ["f44965318c47_12_1"], "golden_facts": ["全员", "全过程", "全公司"], "expect_answer": true},
+    {"id": "q15", "query": "竖向金属管道每隔几层需要与建筑物钢筋可靠连接？", "relevant_chunk_ids": ["f44965318c47_33_0"], "golden_facts": ["三层"], "expect_answer": true},
+    {"id": "q16", "query": "施工现场实行什么制度来防止一个开关控制多台设备？", "relevant_chunk_ids": ["f44965318c47_38_0", "fb2fe23dc47a_65_0"], "golden_facts": ["一机一闸"], "expect_answer": true},
+    {"id": "q17", "query": "运输、吊装重物之前必须编制什么？", "relevant_chunk_ids": ["f44965318c47_38_0"], "golden_facts": ["安全施工技术措施"], "expect_answer": true},
+    {"id": "o01", "query": "本工程地下室底板混凝土的强度等级是多少？", "relevant_chunk_ids": [], "golden_facts": [], "expect_answer": false},
+    {"id": "o02", "query": "空调制冷机组的选型参数是什么？", "relevant_chunk_ids": [], "golden_facts": [], "expect_answer": false},
+    {"id": "o03", "query": "屋面防水卷材采用什么品牌和材料？", "relevant_chunk_ids": [], "golden_facts": [], "expect_answer": false},
+    {"id": "o04", "query": "地下车库一共设计了多少个停车位？", "relevant_chunk_ids": [], "golden_facts": [], "expect_answer": false},
+    {"id": "o05", "query": "玻璃幕墙的安装工艺流程是什么？", "relevant_chunk_ids": [], "golden_facts": [], "expect_answer": false}
+  ]
+}
