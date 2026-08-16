@@ -179,6 +179,12 @@ class TestGetEmbedder:
 
 class TestDenseRetriever:
     def test_向量检索_命中映射为RetrievedChunk(self, monkeypatch):
+        # 单测不得依赖真实 Milvus：连 get_milvus 一起替身
+        # （2026-08-16 CI 教训：不替身时 Windows 本地碰巧有 Milvus 能过，
+        #  干净 Linux CI 上连接 localhost:19530 失败）
+        monkeypatch.setattr(
+            "services.retrieval.dense_retriever.get_milvus",
+            lambda: MagicMock())
         monkeypatch.setattr(
             "services.retrieval.dense_retriever.get_embedder",
             lambda: MagicMock(embed_texts=lambda t: [[0.1, 0.2]]))
