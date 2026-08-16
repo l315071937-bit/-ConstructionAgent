@@ -7,17 +7,18 @@
 
     <section class="nav-section">
       <div class="section-label">Agent</div>
-      <button class="nav-item active" type="button">
+      <button class="nav-item" :class="{ active: activeAgent === 'project' }" type="button"
+              @click="$emit('select-agent', 'project')">
         <el-icon><Search /></el-icon>
         <span>项目资料检索</span>
         <span class="status-dot"></span>
       </button>
-      <el-tooltip content="规范查询 Agent 尚未开放" placement="right">
-        <button class="nav-item disabled" type="button" disabled>
-          <el-icon><Reading /></el-icon>
-          <span>规范查询</span>
-        </button>
-      </el-tooltip>
+      <button class="nav-item" :class="{ active: activeAgent === 'standard' }" type="button"
+              @click="$emit('select-agent', 'standard')">
+        <el-icon><Reading /></el-icon>
+        <span>规范查询</span>
+        <span class="status-dot"></span>
+      </button>
       <el-tooltip content="施工方案 Agent 尚未开放" placement="right">
         <button class="nav-item disabled" type="button" disabled>
           <el-icon><EditPen /></el-icon>
@@ -66,12 +67,13 @@ import { computed, ref } from 'vue'
 import { ChatDotRound, EditPen, Folder, Lock, Plus, Reading, Search } from '@element-plus/icons-vue'
 
 const props = defineProps({
+  activeAgent: { type: String, default: 'project' },
   currentProject: { type: Object, default: null },
   projects: { type: Array, default: () => [] },
   sessionTitle: { type: String, default: '' }
 })
 
-defineEmits(['new-chat', 'select-project', 'switch-project'])
+defineEmits(['new-chat', 'select-agent', 'select-project', 'switch-project'])
 const projectFilter = ref('')
 const filteredProjects = computed(() => {
   const keyword = projectFilter.value.trim().toLowerCase()

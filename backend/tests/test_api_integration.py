@@ -10,6 +10,8 @@ import api.v1.assistant as assistant_api
 import api.v1.folders as folders_api
 import api.v1.projects as projects_api
 import api.v1.retrieval as retrieval_api
+import api.v1.standard_query as standard_query_api
+import api.v1.standards as standards_api
 from core.exceptions import AppError
 from db.session import get_db
 from dependencies import get_current_project, get_current_user
@@ -26,7 +28,7 @@ def make_app(router):
 
     app.dependency_overrides[get_current_project] = lambda: SimpleNamespace(id=1)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id=7, tenant_id=1)
+        id=7, tenant_id=1, role="admin")
     app.dependency_overrides[get_db] = lambda: SimpleNamespace()
     app.include_router(router, prefix="/api/v1")
     return app
@@ -198,8 +200,9 @@ class TestAssistantAPI:
     def test_输入路由使用当前登录用户(self, monkeypatch):
         received = {}
 
-        def route_input(db, user_id, query):
-            received.update(user_id=user_id, query=query)
+        def route_input(db, user_id, query, active_agent):
+            received.update(user_id=user_id, query=query,
+                            active_agent=active_agent)
             return {"type": "RULE_REPLY", "answer": "你好"}
 
         monkeypatch.setattr(assistant_api.input_router_service,
@@ -210,4 +213,54 @@ class TestAssistantAPI:
 
         assert resp.status_code == 200
         assert resp.json()["type"] == "RULE_REPLY"
-        assert received == {"user_id": 7, "query": "你好"}
+        assert received == {"user_id": 7, "query": "你好",
+                            "active_agent": "project"}
+
+
+class TestStandardsAPI:
+    def test_规范库拒绝不支持的文件类型(self):
+        client = TestClient(make_app(standards_api.router))
+
+        resp = client.post(
+            "/api/v1/standards/documents",
+            data={"standard_name": "测试规范"},
+            files={"file": ("standard.exe", b"bad")})
+
+        assert resp.status_code == 415
+        assert resp.json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
+
+    def test_规范查询返回SSE与独立会话(self, monkeypatch):
+        received = {}
+        conversation = SimpleNamespace(id="standard-conv")
+
+        class FakeGraph:
+            async def astream(self, state, stream_mode):
+                received.update(state)
+                yield "updates", {"build_evidence": {"evidences": [{
+                    "standard_code": "GB 1", "content": "条文"}]}}
+                yield "values", {"answer": "规范回答 [E1]", "evidences": [{
+                    "standard_code": "GB 1", "content": "条文"}],
+                    "confidence": 1.0, "version_warnings": []}
+
+        monkeypatch.setattr(standard_query_api, "build_graph", lambda: FakeGraph())
+        monkeypatch.setattr(
+            standard_query_api.conversation_service,
+            "get_or_create_conversation",
+            lambda db, tenant_id, user_id, project_id, conversation_id,
+            agent_type: conversation)
+        monkeypatch.setattr(standard_query_api.conversation_service,
+                            "build_context", lambda *args: "规范历史")
+        monkeypatch.setattr(standard_query_api.conversation_service,
+                            "append_message", lambda *args, **kwargs: None)
+        monkeypatch.setattr(standard_query_api.conversation_service,
+                            "compact_if_needed", lambda *args: False)
+        client = TestClient(make_app(standard_query_api.router))
+
+        resp = client.post("/api/v1/projects/1/standards/query", json={
+            "question": "GB 1 有什么要求", "top_k": 3})
+
+        assert resp.status_code == 200
+        assert "event: evidence" in resp.text
+        assert "standard-conv" in resp.text
+        assert received["tenant_id"] == 1
+        assert received["conversation_context"] == "规范历史"

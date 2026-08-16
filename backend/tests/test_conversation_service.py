@@ -36,6 +36,17 @@ def test_会话严格绑定项目(db):
     assert exc.value.http_status == 409
 
 
+def test_项目与规范Agent会话严格隔离(db):
+    standard = conversation_service.get_or_create_conversation(
+        db, 1, 7, 1, agent_type="standard")
+
+    with pytest.raises(AppError) as exc:
+        conversation_service.get_or_create_conversation(
+            db, 1, 7, 1, standard.id, agent_type="project")
+
+    assert exc.value.code == "CONVERSATION_AGENT_MISMATCH"
+
+
 def test_滑动窗口保留最近原始消息(db, monkeypatch):
     conversation = conversation_service.get_or_create_conversation(
         db, 1, 7, 1)

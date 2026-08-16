@@ -4,7 +4,7 @@
 > Version: V0.1
 > Status: 第一条垂直主链路 API 冻结（骨架开发基准）
 > 覆盖范围：auth / projects / documents / retrieval（SSE）
-> 未覆盖（后续增量补齐）：standards / plans / tasks / HITL resume / 文件预览高级特性
+> 已覆盖：standards 文档入库、预览与 SSE 查询；后续增量补齐 plans / tasks / HITL resume
 > 依据：01 §52 冻结决策表（2026-08-15 定稿）
 
 ---
@@ -279,8 +279,8 @@ POST /api/v1/projects/{project_id}/conversations/{conversation_id}/memories
 # 7. 内部实现约定（非接口契约，开发基准）
 
 ```
-1. 路由：Orchestrator 意图分类，V0.1 仅实现 project 检索意图
-   （intent=STANDARD / PLAN 返回 501 NOT_IMPLEMENTED_V0.1，不在 API 层暴露内部名）
+1. 路由：规则回答 → 项目预测 → Orchestrator 意图分类；PROJECT 与 STANDARD
+   已实现，PLAN 返回建设中提示，不在 API 层暴露内部节点名
 2. 检索管线（V0.1）：
    DenseRetriever(BGE-M3) + LexicalRetriever(接口占位，返回空) → merge
    → Reranker 占位（按 dense score 排序）→ TopK → Evidence 组装
@@ -297,7 +297,8 @@ POST /api/v1/projects/{project_id}/conversations/{conversation_id}/memories
 
 | 模块 | 说明 |
 | --- | --- |
-| standards/query | 规范查询 Agent；契约遵循 01 §45 数据流，schema 到对应阶段冻结 |
+| standards/documents | 规范文件入库、列表、原文件、预览、页面缩略图；按 tenant 隔离 |
+| projects/{project_id}/standards/query | 规范查询 Agent SSE；地区、版本、状态、适用性检查后返回 Standard Evidence |
 | plans/create + resume | 施工方案 Agent + HITL；长任务 Task 化 + checkpoint resume（01 §39/40） |
 | tasks/* | Task 状态查询/恢复/事件；仅 Plan 长任务使用 |
 | 文件预览高级特性 | bbox 页面内高亮、多页缩略图网格（V1.1） |

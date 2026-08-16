@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     milvus_uri: str = "http://localhost:19530"
 
     storage_dir: str = str(BASE_DIR / "storage")
+    standard_storage_dir: str = str(BASE_DIR / "storage" / "standards")
     max_upload_mb: int = 50
 
     # Embedding（默认实现档，01 52.3：接口冻结、实现可换）

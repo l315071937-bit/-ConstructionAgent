@@ -1,5 +1,5 @@
 """Conversation history and explicit long-term memory endpoints."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -20,9 +20,9 @@ class MemoryCreate(BaseModel):
 
 
 def _conversation(db: Session, conversation_id: str, project_id: int,
-                  user: User) -> Conversation:
+                  user: User, agent_type: str = "project") -> Conversation:
     return conversation_service.get_or_create_conversation(
-        db, user.tenant_id, user.id, project_id, conversation_id)
+        db, user.tenant_id, user.id, project_id, conversation_id, agent_type)
 
 
 @router.get("")
@@ -43,10 +43,13 @@ def list_conversations(project=Depends(get_current_project),
 
 @router.get("/{conversation_id}")
 def get_conversation(conversation_id: str,
+                     agent_type: str = Query(default="project",
+                                             pattern="^(project|standard)$"),
                      project=Depends(get_current_project),
                      user: User = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    conversation = _conversation(db, conversation_id, project.id, user)
+    conversation = _conversation(
+        db, conversation_id, project.id, user, agent_type)
     messages = conversation_service.list_messages(db, conversation.id)
     return {
         "conversation_id": conversation.id,

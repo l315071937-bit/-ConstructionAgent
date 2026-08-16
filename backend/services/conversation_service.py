@@ -36,6 +36,9 @@ def get_or_create_conversation(db: Session, tenant_id: int, user_id: int,
         if conversation.project_id != project_id:
             raise AppError("CONVERSATION_PROJECT_MISMATCH",
                            "该会话属于其他项目，请新建会话", 409)
+        if conversation.agent_type != agent_type:
+            raise AppError("CONVERSATION_AGENT_MISMATCH",
+                           "该会话属于其他 Agent，请新建会话", 409)
         return conversation
 
     conversation = Conversation(

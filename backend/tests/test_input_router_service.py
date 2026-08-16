@@ -64,8 +64,21 @@ def test_明确规范和方案请求进入对应Agent路由(monkeypatch):
     plan = input_router_service.route_input(None, 7, "帮我编制防水施工方案")
 
     assert standard == {
-        "type": "AGENT_ROUTE", "intent": "standard", "available": False,
-        "answer": "已识别为规范查询。规范查询 Agent 正在建设，当前尚未开放。",
+        "type": "AGENT_ROUTE", "intent": "standard", "available": True,
     }
     assert plan["intent"] == "plan"
     assert plan["available"] is False
+
+
+def test_规范模式下普通问题固定进入规范Agent(monkeypatch):
+    def should_not_search_projects(*args):
+        raise AssertionError("standard mode must not search project names")
+
+    monkeypatch.setattr(input_router_service.project_service,
+                        "suggest_projects", should_not_search_projects)
+
+    result = input_router_service.route_input(
+        None, 7, "消防车道宽度是多少", active_agent="standard")
+
+    assert result == {
+        "type": "AGENT_ROUTE", "intent": "standard", "available": True}

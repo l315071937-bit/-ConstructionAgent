@@ -2,11 +2,11 @@
   <aside class="context-panel">
     <div class="panel-header">
       <div>
-        <h3>项目工作区</h3>
+        <h3>{{ workspaceTitle }}</h3>
         <span>{{ project ? project.name : '尚未选择项目' }}</span>
       </div>
-      <el-upload :show-file-list="false" :http-request="upload" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt">
-        <el-button circle size="small" type="primary" title="上传项目资料">
+      <el-upload v-if="canUpload" :show-file-list="false" :http-request="upload" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt">
+        <el-button circle size="small" type="primary" :title="uploadTitle">
           <el-icon><Upload /></el-icon>
         </el-button>
       </el-upload>
@@ -14,7 +14,7 @@
 
     <div class="panel-tabs" role="tablist" aria-label="项目工作区视图">
       <button type="button" :class="{ active: mode === 'files' }" @click="setMode('files')">
-        项目文件 <span>{{ documents.length }}</span>
+        {{ libraryLabel }} <span>{{ documents.length }}</span>
       </button>
       <button type="button" :class="{ active: mode === 'evidence' }" @click="setMode('evidence')">
         检索依据 <span>{{ evidences.length }}</span>
@@ -30,7 +30,7 @@
     </div>
 
     <template v-if="mode === 'files'">
-      <div class="folder-toolbar">
+      <div v-if="showFolders" class="folder-toolbar">
         <button type="button" :class="{ active: !selectedFolderId }" @click="$emit('select-folder', '')">
           <el-icon><FolderOpened /></el-icon>
           <span>全部文件</span>
@@ -40,7 +40,7 @@
           <el-icon><Plus /></el-icon>
         </el-button>
       </div>
-      <div v-if="flatFolders.length" class="folder-tree">
+      <div v-if="showFolders && flatFolders.length" class="folder-tree">
         <div v-for="folder in flatFolders" :key="folder.folder_id" class="folder-row"
              :class="{ active: folder.folder_id === selectedFolderId }"
              :style="{ paddingLeft: (8 + folder.depth * 16) + 'px' }">
@@ -77,8 +77,8 @@
                 @click="$emit('open-project-document', doc)">
           <span class="file-badge">{{ fileType(doc.file_name) }}</span>
           <span class="document-copy">
-            <strong>{{ doc.file_name }}</strong>
-            <small>{{ doc.page_count }} 页 · {{ statusLabel(doc.parse_status) }}</small>
+            <strong>{{ documentTitle(doc) }}</strong>
+            <small>{{ documentMeta(doc) }}</small>
           </span>
           <el-icon><ArrowRight /></el-icon>
         </button>
@@ -96,8 +96,8 @@
             <span class="evidence-number">E{{ i + 1 }}</span>
           </div>
           <div class="evidence-meta">
-            <strong>{{ ev.file_name }}</strong>
-            <span>第 {{ ev.page }} 页</span>
+            <strong>{{ evidenceTitle(ev) }}</strong>
+            <span>{{ evidenceMeta(ev) }}</span>
             <el-progress :percentage="Math.round(ev.score * 100)" :show-text="false" :stroke-width="3" />
           </div>
         </button>
@@ -115,14 +115,19 @@ import { ArrowRight, Document, Folder, FolderOpened, MoreFilled, Plus, Search, U
 const props = defineProps({
   activeDocumentId: { type: String, default: '' },
   activeIndex: { type: Number, default: -1 },
+  canUpload: { type: Boolean, default: true },
   documents: { type: Array, default: () => [] },
   evidences: { type: Array, default: () => [] },
   folders: { type: Array, default: () => [] },
+  libraryLabel: { type: String, default: '项目文件' },
   mode: { type: String, default: 'files' },
   previewLabel: { type: String, default: '' },
   previewUrl: { type: String, default: '' },
   project: { type: Object, default: null },
-  selectedFolderId: { type: String, default: '' }
+  selectedFolderId: { type: String, default: '' },
+  showFolders: { type: Boolean, default: true },
+  uploadTitle: { type: String, default: '上传项目资料' },
+  workspaceTitle: { type: String, default: '项目工作区' }
 })
 
 const emit = defineEmits([
@@ -178,6 +183,39 @@ function fileType(fileName) {
 
 function statusLabel(status) {
   return { PENDING: '等待处理', PARSING: '解析中', READY: '可检索', FAILED: '解析失败' }[status] || status
+}
+
+function documentTitle(document) {
+  if (document.source_type === 'STANDARD_DOCUMENT') {
+    return [document.standard_code, document.standard_name].filter(Boolean).join(' · ')
+  }
+  return document.file_name
+}
+
+function documentMeta(document) {
+  if (document.source_type === 'STANDARD_DOCUMENT') {
+    const status = {
+      active: '现行', repealed: '废止', replaced: '被替代',
+      upcoming: '即将实施', unknown: '状态未知'
+    }[document.status] || '状态未知'
+    return [document.region, document.version, status].filter(Boolean).join(' · ')
+  }
+  return document.page_count + ' 页 · ' + statusLabel(document.parse_status)
+}
+
+function evidenceTitle(evidence) {
+  if (evidence.source_type === 'STANDARD_DOCUMENT') {
+    return [evidence.standard_code, evidence.standard_name].filter(Boolean).join(' · ')
+  }
+  return evidence.file_name
+}
+
+function evidenceMeta(evidence) {
+  if (evidence.source_type === 'STANDARD_DOCUMENT') {
+    return [evidence.article ? '第 ' + evidence.article + ' 条' : '',
+      '第 ' + evidence.page + ' 页'].filter(Boolean).join(' · ')
+  }
+  return '第 ' + evidence.page + ' 页'
 }
 
 function setMode(value) {

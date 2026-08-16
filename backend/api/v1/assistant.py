@@ -13,10 +13,12 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 class InputRouteRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
+    active_agent: str = Field(default="project", pattern="^(project|standard)$")
 
 
 @router.post("/route")
 def route_input(body: InputRouteRequest,
                 user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    return input_router_service.route_input(db, user.id, body.query)
+    return input_router_service.route_input(
+        db, user.id, body.query, body.active_agent)

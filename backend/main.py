@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.v1 import (assistant, auth, conversations, documents, folders,
-                    projects, retrieval)
+                    projects, retrieval, standard_query, standards)
 from config import settings
 from core.exceptions import AppError
 from core.logger import get_logger
@@ -45,6 +45,8 @@ async def startup():
     try:
         from core.knowledge_base import ensure_collection
         ensure_collection()
+        from core.standard_knowledge_base import ensure_standard_collection
+        ensure_standard_collection()
     except Exception as e:
         logger.warning("milvus not ready at startup: %s", e)
 
@@ -60,4 +62,6 @@ app.include_router(projects.router, prefix=settings.api_prefix)
 app.include_router(conversations.router, prefix=settings.api_prefix)
 app.include_router(documents.router, prefix=settings.api_prefix)
 app.include_router(folders.router, prefix=settings.api_prefix)
+app.include_router(standards.router, prefix=settings.api_prefix)
+app.include_router(standard_query.router, prefix=settings.api_prefix)
 app.include_router(retrieval.router, prefix=settings.api_prefix)

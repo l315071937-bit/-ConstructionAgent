@@ -1,9 +1,9 @@
 """V0.1 数据模型（01 24 的子集，仅主链路所需）。
 权限链：Tenant → User → Project → ProjectMember → 访问（01 9）。"""
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Integer,
+from sqlalchemy import (JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer,
                         String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -104,6 +104,44 @@ class DocumentFolderLink(Base):
         ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
     folder_id: Mapped[str] = mapped_column(
         ForeignKey("project_folders.id"), index=True)
+
+
+class StandardDocument(Base):
+    __tablename__ = "standard_documents"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), index=True)
+    standard_code: Mapped[str] = mapped_column(String(64), default="")
+    standard_name: Mapped[str] = mapped_column(String(256))
+    version: Mapped[str] = mapped_column(String(64), default="")
+    region: Mapped[str] = mapped_column(String(64), default="全国")
+    discipline: Mapped[str] = mapped_column(String(64), default="")
+    standard_type: Mapped[str] = mapped_column(String(64), default="国家标准")
+    status: Mapped[str] = mapped_column(String(24), default="unknown")
+    publish_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    file_name: Mapped[str] = mapped_column(String(256))
+    file_path: Mapped[str] = mapped_column(String(512))
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    parse_status: Mapped[str] = mapped_column(String(16), default="PENDING")
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    parse_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class StandardChunk(Base):
+    __tablename__ = "standard_chunks"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    chunk_id: Mapped[str] = mapped_column(String(64), unique=True)
+    standard_document_id: Mapped[str] = mapped_column(
+        ForeignKey("standard_documents.id", ondelete="CASCADE"), index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, index=True)
+    content: Mapped[str] = mapped_column(Text)
+    page: Mapped[int] = mapped_column(Integer, default=1)
+    article: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class Conversation(Base):

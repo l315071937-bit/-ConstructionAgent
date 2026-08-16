@@ -47,6 +47,23 @@ export async function uploadDocument(projectId, file, folderId = '') {
   return data
 }
 
+export async function uploadStandardDocument(file, metadata) {
+  const auth = useAuthStore()
+  const form = new FormData()
+  form.append('file', file)
+  for (const [key, value] of Object.entries(metadata)) {
+    form.append(key, value || '')
+  }
+  const resp = await fetch(BASE + '/standards/documents', {
+    method: 'POST',
+    headers: auth.token ? { Authorization: 'Bearer ' + auth.token } : {},
+    body: form
+  })
+  const data = await resp.json().catch(() => ({}))
+  if (!resp.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status))
+  return data
+}
+
 export async function fetchProtectedBlobUrl(path) {
   const auth = useAuthStore()
   const resp = await fetch(apiUrl(path), {
@@ -61,15 +78,15 @@ export async function fetchProtectedBlobUrl(path) {
 }
 
 // SSE 流式问答：onEvent(event, data) 回调
-export async function streamQuery(projectId, question, onEvent, topK = 8, conversationId = null) {
+async function streamRequest(path, payload, onEvent) {
   const auth = useAuthStore()
-  const resp = await fetch(BASE + '/projects/' + projectId + '/retrieval/query', {
+  const resp = await fetch(BASE + path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: 'Bearer ' + auth.token
     },
-    body: JSON.stringify({ question, top_k: topK, conversation_id: conversationId })
+    body: JSON.stringify(payload)
   })
   if (!resp.ok || !resp.body) {
     const data = await resp.json().catch(() => ({}))
@@ -98,6 +115,16 @@ export async function streamQuery(projectId, question, onEvent, topK = 8, conver
       }
     }
   }
+}
+
+export async function streamQuery(projectId, question, onEvent, topK = 8, conversationId = null) {
+  return streamRequest('/projects/' + projectId + '/retrieval/query',
+    { question, top_k: topK, conversation_id: conversationId }, onEvent)
+}
+
+export async function streamStandardQuery(projectId, question, onEvent, topK = 8, conversationId = null) {
+  return streamRequest('/projects/' + projectId + '/standards/query',
+    { question, top_k: topK, conversation_id: conversationId }, onEvent)
 }
 
 export { request }

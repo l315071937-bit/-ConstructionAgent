@@ -46,8 +46,8 @@ def match_quick_rule(query: str) -> dict | None:
             "type": "RULE_REPLY",
             "rule": "CAPABILITIES",
             "answer": (
-                "我目前可以帮助您查找项目资料；规范查询和施工方案编制"
-                "也已纳入 Agent 路由，将按开发进度逐步开放。"
+                "我目前可以帮助您查找项目资料和查询工程规范；"
+                "施工方案编制 Agent 将按开发进度开放。"
             ),
         }
     if "最近" in normalized and "项目" in normalized:
@@ -59,7 +59,8 @@ def match_quick_rule(query: str) -> dict | None:
     return None
 
 
-def route_input(db: Session, user_id: int, query: str) -> dict:
+def route_input(db: Session, user_id: int, query: str,
+                active_agent: str = "project") -> dict:
     quick_rule = match_quick_rule(query)
     if quick_rule:
         if quick_rule["type"] == "RECENT_PROJECTS":
@@ -67,6 +68,10 @@ def route_input(db: Session, user_id: int, query: str) -> dict:
             return {**quick_rule,
                     "projects": project_service.project_cards(db, projects)}
         return quick_rule
+
+    if active_agent == "standard":
+        return {"type": "AGENT_ROUTE", "intent": "standard",
+                "available": True}
 
     suggestions = project_service.suggest_projects(db, user_id, query, 3)
     if suggestions:
@@ -83,8 +88,7 @@ def route_input(db: Session, user_id: int, query: str) -> dict:
     intent = classify_intent(query)
     if intent == "standard":
         return {
-            "type": "AGENT_ROUTE", "intent": intent, "available": False,
-            "answer": "已识别为规范查询。规范查询 Agent 正在建设，当前尚未开放。",
+            "type": "AGENT_ROUTE", "intent": intent, "available": True,
         }
     if intent == "plan":
         return {

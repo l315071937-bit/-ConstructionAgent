@@ -15,10 +15,12 @@
     <div class="workspace-body">
       <WorkspaceSidebar
         class="desktop-navigation"
+        :active-agent="activeAgent"
         :current-project="currentProject"
         :projects="projects"
         :session-title="sessionTitle"
         @new-chat="newConversation"
+        @select-agent="selectAgent"
         @select-project="lockProject"
         @switch-project="projectPickerOpen = true"
       />
@@ -26,13 +28,13 @@
       <main class="conversation-panel">
         <header class="conversation-header">
           <div class="conversation-title">
-            <span class="agent-label">项目资料检索</span>
-            <h1>{{ currentProject ? currentProject.name : '项目工作台' }}</h1>
+            <span class="agent-label">{{ activeAgentLabel }}</span>
+            <h1>{{ conversationHeading }}</h1>
           </div>
           <div class="knowledge-status">
             <el-icon><Lock /></el-icon>
-            <span>知识库已锁定</span>
-            <strong>{{ readyDocumentCount }}/{{ documents.length }}</strong>
+            <span>{{ activeAgent === 'standard' ? '规范库已连接' : '知识库已锁定' }}</span>
+            <strong>{{ readyDocumentCount }}/{{ libraryDocuments.length }}</strong>
           </div>
         </header>
 
@@ -84,13 +86,13 @@
             type="textarea"
             resize="none"
             :autosize="{ minRows: 2, maxRows: 5 }"
-            placeholder="向当前项目知识库提问"
+            :placeholder="composerPlaceholder"
             @keydown.enter.exact.prevent="ask"
           />
           <div class="composer-footer">
             <button class="locked-context" type="button" @click="projectPickerOpen = true">
               <el-icon><Lock /></el-icon>
-              <span>{{ currentProject && currentProject.name }}</span>
+              <span>{{ activeAgent === 'standard' ? '企业规范知识库' : currentProject && currentProject.name }}</span>
             </button>
             <el-button class="send-button" circle type="primary" native-type="submit"
                        :disabled="!question.trim() || thinking" title="发送">
@@ -105,13 +107,18 @@
         v-model:mode="contextMode"
         :active-document-id="activeDocumentId"
         :active-index="activeEv"
-        :documents="documents"
+        :can-upload="activeAgent === 'project' || auth.user && auth.user.role === 'admin'"
+        :documents="libraryDocuments"
         :evidences="evidences"
-        :folders="folders"
+        :folders="activeAgent === 'project' ? folders : []"
+        :library-label="activeAgent === 'standard' ? '规范文件' : '项目文件'"
         :preview-label="previewLabel"
         :preview-url="previewUrl"
-        :project="currentProject"
+        :project="libraryContext"
         :selected-folder-id="selectedFolderId"
+        :show-folders="activeAgent === 'project'"
+        :upload-title="activeAgent === 'standard' ? '上传规范文件' : '上传项目资料'"
+        :workspace-title="activeAgent === 'standard' ? '规范工作区' : '项目工作区'"
         @create-folder="createFolder"
         @delete-folder="deleteFolder"
         @focus-evidence="focusEvidence"
@@ -125,10 +132,12 @@
 
     <el-drawer v-model="navigationOpen" direction="ltr" size="280px" :with-header="false">
       <WorkspaceSidebar
+        :active-agent="activeAgent"
         :current-project="currentProject"
         :projects="projects"
         :session-title="sessionTitle"
         @new-chat="newConversation(); navigationOpen = false"
+        @select-agent="selectAgent"
         @select-project="lockProject"
         @switch-project="projectPickerOpen = true"
       />
@@ -139,13 +148,18 @@
         v-model:mode="contextMode"
         :active-document-id="activeDocumentId"
         :active-index="activeEv"
-        :documents="documents"
+        :can-upload="activeAgent === 'project' || auth.user && auth.user.role === 'admin'"
+        :documents="libraryDocuments"
         :evidences="evidences"
-        :folders="folders"
+        :folders="activeAgent === 'project' ? folders : []"
+        :library-label="activeAgent === 'standard' ? '规范文件' : '项目文件'"
         :preview-label="previewLabel"
         :preview-url="previewUrl"
-        :project="currentProject"
+        :project="libraryContext"
         :selected-folder-id="selectedFolderId"
+        :show-folders="activeAgent === 'project'"
+        :upload-title="activeAgent === 'standard' ? '上传规范文件' : '上传项目资料'"
+        :workspace-title="activeAgent === 'standard' ? '规范工作区' : '项目工作区'"
         @create-folder="createFolder"
         @delete-folder="deleteFolder"
         @focus-evidence="focusEvidence"
@@ -191,11 +205,59 @@
         <el-slider v-model="topK" :min="2" :max="20" :step="1" show-stops />
       </div>
     </el-drawer>
+
+    <el-dialog v-model="standardUploadOpen" title="录入规范文件" width="620px">
+      <el-form label-position="top" :model="standardForm">
+        <div class="standard-form-grid">
+          <el-form-item class="span-two" label="规范名称" required>
+            <el-input v-model="standardForm.standard_name" placeholder="例如：建筑设计防火规范" />
+          </el-form-item>
+          <el-form-item label="规范编号">
+            <el-input v-model="standardForm.standard_code" placeholder="例如：GB 50016-2014" />
+          </el-form-item>
+          <el-form-item label="版本">
+            <el-input v-model="standardForm.version" placeholder="例如：2018年版" />
+          </el-form-item>
+          <el-form-item label="适用地区">
+            <el-input v-model="standardForm.region" placeholder="全国 / 广东 / 深圳" />
+          </el-form-item>
+          <el-form-item label="专业">
+            <el-select v-model="standardForm.discipline" clearable placeholder="选择专业">
+              <el-option v-for="item in standardDisciplines" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="规范类型">
+            <el-select v-model="standardForm.standard_type">
+              <el-option v-for="item in standardTypes" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="有效状态" required>
+            <el-select v-model="standardForm.status">
+              <el-option label="现行" value="active" />
+              <el-option label="状态未知" value="unknown" />
+              <el-option label="废止" value="repealed" />
+              <el-option label="被替代" value="replaced" />
+              <el-option label="即将实施" value="upcoming" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="发布日期">
+            <el-date-picker v-model="standardForm.publish_date" type="date" value-format="YYYY-MM-DD" />
+          </el-form-item>
+          <el-form-item label="实施日期">
+            <el-date-picker v-model="standardForm.effective_date" type="date" value-format="YYYY-MM-DD" />
+          </el-form-item>
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="cancelStandardUpload">取消</el-button>
+        <el-button type="primary" :loading="standardUploading" @click="submitStandardUpload">上传并解析</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, EditPen, Folder, Lock, Position, Reading, Search } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -203,7 +265,8 @@ import EvidencePanel from '../components/EvidencePanel.vue'
 import ProjectQuickSearch from '../components/ProjectQuickSearch.vue'
 import WorkspaceSidebar from '../components/WorkspaceSidebar.vue'
 import WorkspaceTopbar from '../components/WorkspaceTopbar.vue'
-import { fetchProtectedBlobUrl, request, streamQuery, uploadDocument } from '../api/client'
+import { fetchProtectedBlobUrl, request, streamQuery, streamStandardQuery,
+  uploadDocument, uploadStandardDocument } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useWorkspaceStore } from '../stores/workspace'
 
@@ -217,6 +280,8 @@ const currentProject = ref(null)
 const documents = ref([])
 const folders = ref([])
 const selectedFolderId = ref('')
+const activeAgent = ref('project')
+const standards = ref([])
 const messages = ref([createWelcomeMessage()])
 const evidences = ref([])
 const conversationId = ref('')
@@ -233,11 +298,17 @@ const projectPickerOpen = ref(false)
 const settingsOpen = ref(false)
 const navigationOpen = ref(false)
 const evidenceDrawerOpen = ref(false)
+const standardUploadOpen = ref(false)
+const standardUploading = ref(false)
+const standardUploadOptions = ref(null)
+const standardForm = reactive(createStandardForm())
 const chatScroll = ref(null)
 let evidenceLoadVersion = 0
 let previewBlobUrl = ''
 let previewLoadVersion = 0
 let documentPollTimer = 0
+const standardDisciplines = ['建筑', '结构', '给排水', '电气', '暖通', '消防', '市政', '园林']
+const standardTypes = ['国家标准', '行业标准', '地方标准', '标准图集', '企业规范', '项目指定规范']
 
 const compactMode = computed({
   get: () => workspace.compactMode,
@@ -247,7 +318,19 @@ const topK = computed({
   get: () => workspace.topK,
   set: value => workspace.setTopK(value)
 })
-const readyDocumentCount = computed(() => documents.value.filter(doc => doc.parse_status === 'READY').length)
+const libraryDocuments = computed(() => activeAgent.value === 'standard'
+  ? standards.value : documents.value)
+const readyDocumentCount = computed(() => libraryDocuments.value.filter(
+  doc => doc.parse_status === 'READY').length)
+const activeAgentLabel = computed(() => activeAgent.value === 'standard'
+  ? '工程规范查询' : '项目资料检索')
+const conversationHeading = computed(() => activeAgent.value === 'standard'
+  ? '工程规范查询' : (currentProject.value ? currentProject.value.name : '项目工作台'))
+const composerPlaceholder = computed(() => activeAgent.value === 'standard'
+  ? '查询规范编号、条款、地区适用性或有效状态'
+  : '向当前项目知识库提问')
+const libraryContext = computed(() => activeAgent.value === 'standard'
+  ? { name: '企业规范知识库' } : currentProject.value)
 const sessionTitle = computed(() => {
   const first = messages.value.find(message => message.role === 'user')
   return first ? first.content : ''
@@ -258,12 +341,18 @@ const matchedProjects = computed(() => {
 })
 
 function createWelcomeMessage() {
+  if (activeAgent.value === 'standard') {
+    return {
+      role: 'ai',
+      content: '已进入工程规范查询。请告诉我规范编号、工程地区、专业或需要核对的具体做法。'
+    }
+  }
   return {
     role: 'ai',
     content: '你好，我是智能 AI 建筑辅助功能。\n我可以为您查找项目资料、查询工程规范、编制施工方案。请告诉我您想处理的项目或问题。',
     actions: [
       { id: 'project', label: '查找项目资料', icon: Search },
-      { id: 'standard', label: '查询工程规范', icon: Reading, disabled: true },
+      { id: 'standard', label: '查询工程规范', icon: Reading },
       { id: 'plan', label: '编制施工方案', icon: EditPen, disabled: true }
     ]
   }
@@ -285,8 +374,11 @@ function renderAnswer(text) {
 
 function scheduleDocumentPoll() {
   window.clearTimeout(documentPollTimer)
-  if (documents.value.some(doc => ['PENDING', 'PARSING'].includes(doc.parse_status))) {
-    documentPollTimer = window.setTimeout(loadDocuments, 2000)
+  if ([...documents.value, ...standards.value].some(
+      doc => ['PENDING', 'PARSING'].includes(doc.parse_status))) {
+    documentPollTimer = window.setTimeout(async () => {
+      await Promise.all([loadDocuments(), loadStandards()])
+    }, 2000)
   }
 }
 
@@ -294,6 +386,19 @@ async function loadDocuments() {
   try {
     const data = await request('GET', '/projects/' + projectId.value + '/documents')
     documents.value = data.items
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    scheduleDocumentPoll()
+  }
+}
+
+async function loadStandards() {
+  try {
+    const data = await request('GET', '/standards/documents')
+    standards.value = data.items.map(item => ({
+      ...item, source_type: 'STANDARD_DOCUMENT'
+    }))
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -322,16 +427,17 @@ async function loadWorkspace() {
   projects.value = projectList.items
   currentProject.value = projectDetail
   workspace.rememberProject(projectId.value)
-  await Promise.all([loadDocuments(), loadFolders()])
+  await Promise.all([loadDocuments(), loadFolders(), loadStandards()])
   await loadConversation()
 }
 
 async function loadConversation() {
-  const storedId = workspace.conversationIds[String(projectId.value)]
+  const storedId = workspace.getConversation(projectId.value, activeAgent.value)
   if (!storedId) return
   try {
     const data = await request(
-      'GET', '/projects/' + projectId.value + '/conversations/' + storedId)
+      'GET', '/projects/' + projectId.value + '/conversations/' + storedId +
+      '?agent_type=' + encodeURIComponent(activeAgent.value))
     conversationId.value = data.conversation_id
     const restored = data.messages.map(message => ({
       message_id: message.message_id,
@@ -348,7 +454,7 @@ async function loadConversation() {
       contextMode.value = 'evidence'
     }
   } catch (error) {
-    workspace.clearConversation(projectId.value)
+    workspace.clearConversation(projectId.value, activeAgent.value)
     conversationId.value = ''
   }
 }
@@ -389,11 +495,18 @@ async function focusEvidence(index) {
   const evidence = evidences.value[index - 1]
   contextMode.value = 'evidence'
   clearPreview()
-  if (!evidence || !evidence.thumbnail_url) return
+  if (!evidence) return
   const version = previewLoadVersion
   try {
-    const blobUrl = await fetchProtectedBlobUrl(
-      '/projects/' + projectId.value + '/documents/' + evidence.file_id + '/preview')
+    const basePath = evidence.source_type === 'STANDARD_DOCUMENT'
+      ? '/standards/documents/' + evidence.file_id
+      : '/projects/' + projectId.value + '/documents/' + evidence.file_id
+    let blobUrl
+    try {
+      blobUrl = await fetchProtectedBlobUrl(basePath + '/preview')
+    } catch (previewError) {
+      blobUrl = await fetchProtectedBlobUrl(basePath + '/file')
+    }
     if (version !== previewLoadVersion) {
       URL.revokeObjectURL(blobUrl)
       return
@@ -419,12 +532,13 @@ async function previewProjectDocument(doc) {
   const version = previewLoadVersion
   try {
     let blobUrl
+    const basePath = doc.source_type === 'STANDARD_DOCUMENT'
+      ? '/standards/documents/' + doc.document_id
+      : '/projects/' + projectId.value + '/documents/' + doc.document_id
     try {
-      blobUrl = await fetchProtectedBlobUrl(
-        '/projects/' + projectId.value + '/documents/' + doc.document_id + '/preview')
+      blobUrl = await fetchProtectedBlobUrl(basePath + '/preview')
     } catch (previewError) {
-      blobUrl = await fetchProtectedBlobUrl(
-        '/projects/' + projectId.value + '/documents/' + doc.document_id + '/file')
+      blobUrl = await fetchProtectedBlobUrl(basePath + '/file')
     }
     if (version !== previewLoadVersion) {
       URL.revokeObjectURL(blobUrl)
@@ -450,7 +564,7 @@ function openEvidencePanel() {
 }
 
 function newConversation() {
-  workspace.clearConversation(projectId.value)
+  workspace.clearConversation(projectId.value, activeAgent.value)
   conversationId.value = ''
   resetConversationView()
 }
@@ -469,6 +583,10 @@ function resetConversationView() {
 function handleAssistantAction(action) {
   if (action.disabled) {
     ElMessage.info(action.label + ' Agent 后端尚未开放')
+    return
+  }
+  if (action.id === 'standard') {
+    selectAgent('standard')
     return
   }
   messages.value.push({ role: 'user', content: action.label })
@@ -491,7 +609,9 @@ async function findProjectCandidates(query) {
 }
 
 async function routeInput(query) {
-  return request('POST', '/assistant/route', { query })
+  return request('POST', '/assistant/route', {
+    query, active_agent: activeAgent.value
+  })
 }
 
 function appendRoutedReply(decision) {
@@ -536,6 +656,14 @@ async function ask() {
     await scrollToBottom()
     return
   }
+  const targetAgent = decision && decision.intent === 'standard'
+    ? 'standard' : activeAgent.value
+  if (targetAgent !== activeAgent.value) {
+    activeAgent.value = targetAgent
+    conversationId.value = workspace.getConversation(
+      projectId.value, activeAgent.value)
+    selectedFolderId.value = ''
+  }
   stage.value = '正在分析问题'
   ++evidenceLoadVersion
   revokeEvidenceUrls()
@@ -546,11 +674,14 @@ async function ask() {
   messages.value.push(answerMessage)
   await scrollToBottom()
   try {
-    await streamQuery(projectId.value, query, (event, data) => {
+    const stream = activeAgent.value === 'standard'
+      ? streamStandardQuery : streamQuery
+    await stream(projectId.value, query, (event, data) => {
       if (event === 'stage') stage.value = data.message
       if (event === 'started' && data.conversation_id) {
         conversationId.value = data.conversation_id
-        workspace.setConversation(projectId.value, data.conversation_id)
+        workspace.setConversation(
+          projectId.value, data.conversation_id, activeAgent.value)
       }
       if (event === 'evidence') {
         answerMessage.evidences = data.evidences
@@ -581,6 +712,12 @@ async function scrollToBottom() {
 }
 
 async function doUpload(options) {
+  if (activeAgent.value === 'standard') {
+    standardUploadOptions.value = options
+    Object.assign(standardForm, createStandardForm(options.file.name))
+    standardUploadOpen.value = true
+    return
+  }
   try {
     const data = await uploadDocument(
       projectId.value, options.file, selectedFolderId.value)
@@ -592,6 +729,55 @@ async function doUpload(options) {
     options.onError(e)
     ElMessage.error('上传失败：' + e.message)
   }
+}
+
+function createStandardForm(fileName = '') {
+  return {
+    standard_name: fileName.replace(/\.[^.]+$/, ''), standard_code: '',
+    version: '', region: '全国', discipline: '', standard_type: '国家标准',
+    status: 'unknown', publish_date: '', effective_date: ''
+  }
+}
+
+function cancelStandardUpload() {
+  standardUploadOpen.value = false
+  if (standardUploadOptions.value) {
+    standardUploadOptions.value.onError(new Error('cancelled'))
+  }
+  standardUploadOptions.value = null
+}
+
+async function submitStandardUpload() {
+  if (!standardForm.standard_name.trim() || !standardUploadOptions.value) {
+    ElMessage.warning('请填写规范名称')
+    return
+  }
+  standardUploading.value = true
+  try {
+    const data = await uploadStandardDocument(
+      standardUploadOptions.value.file, standardForm)
+    standardUploadOptions.value.onSuccess(data)
+    standardUploadOpen.value = false
+    standardUploadOptions.value = null
+    contextMode.value = 'files'
+    await loadStandards()
+    ElMessage.success('规范已上传并进入解析队列')
+  } catch (error) {
+    standardUploadOptions.value.onError(error)
+    ElMessage.error('规范上传失败：' + error.message)
+  } finally {
+    standardUploading.value = false
+  }
+}
+
+async function selectAgent(agent) {
+  navigationOpen.value = false
+  if (agent === activeAgent.value) return
+  activeAgent.value = agent
+  selectedFolderId.value = ''
+  conversationId.value = ''
+  resetConversationView()
+  await loadConversation()
 }
 
 async function createFolder(payload) {
@@ -735,6 +921,9 @@ onBeforeUnmount(() => {
 .setting-row span, .setting-title span { color: #7a8594; font-size: 11px; }
 .setting-block { padding: 18px 0; }
 .setting-title { display: flex; justify-content: space-between; margin-bottom: 14px; }
+.standard-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.standard-form-grid .span-two { grid-column: 1 / -1; }
+.standard-form-grid :deep(.el-select), .standard-form-grid :deep(.el-date-editor) { width: 100%; }
 .compact .message { padding: 11px 0; }
 .compact .message-list { padding-top: 16px; }
 .compact .conversation-header { height: 52px; }
@@ -755,5 +944,7 @@ onBeforeUnmount(() => {
   .message { grid-template-columns: 1fr; gap: 5px; }
   .assistant-actions { grid-template-columns: 1fr; }
   .composer { margin: 0 10px 10px; }
+  .standard-form-grid { grid-template-columns: 1fr; }
+  .standard-form-grid .span-two { grid-column: auto; }
 }
 </style>
