@@ -1,0 +1,25 @@
+# ConstructionAgent backend V0.1
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pymilvus>=2.5.0,<2.6
+PyJWT>=2.8
+bcrypt>=4.1
+openai>=1.40
+httpx>=0.27
+python-multipart>=0.0.9
+
+# Agent 编排（版本锁定策略见 01 §52.2：锁定大版本，升级需评审）
+langgraph>=0.4.0
+langchain-core>=0.3
+
+# 文档解析（注意：PyMuPDF 为 AGPL-3.0/商业双许可，法务决策前为默认实现，
+# 决策不通过时切换 pypdf/pdfplumber 见 services/document_parser/）
+PyMuPDF>=1.24
+
+# 可选（本地模式才需要，按需安装）：
+# sentence-transformers>=3.0   # EmbeddingFactory 本地模式（BGE-M3）
+# paddleocr / paddlepaddle     # 扫描件 OCR（独立容器部署，见 01 §52.3）
