@@ -208,3 +208,18 @@ class TestProjectSuggestions:
         result = project_service.suggest_projects(None, 7, "龙华", limit=3)
 
         assert [project.id for project in result] == [1, 2]
+
+    def test_省略行政区后缀仍可预测项目(self, monkeypatch):
+        projects = [
+            SimpleNamespace(id=index, name=name, description="深圳龙华项目",
+                            created_at=index)
+            for index, name in enumerate([
+                "深圳市龙华区星河幼儿园", "深圳市龙华区中心儿童医院",
+                "深圳市龙华区儿童公园"], start=1)
+        ]
+        monkeypatch.setattr(project_service, "list_projects",
+                            lambda db, user_id: projects)
+
+        result = project_service.suggest_projects(None, 7, "深圳龙华", limit=3)
+
+        assert len(result) == 3

@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from core.exceptions import AppError
-from db.models import User
+from db.models import Document, DocumentFolderLink, User
 from db.session import SessionLocal, get_db
 from dependencies import get_current_project, get_current_user
-from services import document_service, preview_service
+from services import document_service, folder_service, preview_service
 from services.document_parser.router import SUPPORTED_EXTS
 
 router = APIRouter(prefix="/projects/{project_id}/documents",
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/projects/{project_id}/documents",
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    folder_id: str | None = Query(default=None),
     project=Depends(get_current_project),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -36,9 +37,13 @@ async def upload_document(
     if len(content) > settings.max_upload_mb * 1024 * 1024:
         raise AppError("FILE_TOO_LARGE", "文件超过 {}MB 限制".format(
             settings.max_upload_mb), 413)
+    if folder_id:
+        folder_service.get_folder(db, project.id, folder_id)
     file_path = document_service.save_upload(project.id, file_name, content)
     doc = document_service.create_document(
         db, project.id, file_name, file_path, len(content), user.id)
+    if folder_id:
+        folder_service.assign_document(db, project.id, doc.id, folder_id)
     # 解析异步执行（FastAPI BackgroundTasks 同请求进程内；Celery 化留后续）
     def _parse():
         s = SessionLocal()
@@ -55,14 +60,17 @@ async def upload_document(
 @router.get("")
 def list_documents(project=Depends(get_current_project),
                    db: Session = Depends(get_db)):
-    from db.models import Document
-    docs = (db.query(Document)
+    rows = (db.query(Document, DocumentFolderLink.folder_id)
+            .outerjoin(DocumentFolderLink,
+                       DocumentFolderLink.document_id == Document.id)
             .filter(Document.project_id == project.id)
             .order_by(Document.created_at.desc()).all())
     items = [{"document_id": d.id, "file_name": d.file_name,
+              "folder_id": folder_id,
               "parse_status": d.parse_status, "page_count": d.page_count,
               "chunk_count": d.chunk_count,
-              "created_at": d.created_at.isoformat() + "Z"} for d in docs]
+              "created_at": d.created_at.isoformat() + "Z"}
+             for d, folder_id in rows]
     return {"items": items, "total": len(items)}
 
 

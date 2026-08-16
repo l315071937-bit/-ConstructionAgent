@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 import api.v1.documents as documents_api
+import api.v1.folders as folders_api
 import api.v1.projects as projects_api
 import api.v1.retrieval as retrieval_api
 from core.exceptions import AppError
@@ -146,3 +147,47 @@ class TestProjectsAPI:
         assert client.get("/api/v1/projects/suggestions?q=深").status_code == 422
         assert client.get(
             "/api/v1/projects/suggestions?q=深圳&limit=4").status_code == 422
+
+
+class TestFoldersAPI:
+    def test_创建子文件夹传递父目录与当前项目(self, monkeypatch):
+        received = {}
+        folder = SimpleNamespace(
+            id="child-1", parent_id="root-1", name="电气",
+            created_at=SimpleNamespace(
+                isoformat=lambda: "2026-08-17T00:00:00"))
+
+        def create(db, project_id, user_id, name, parent_id):
+            received.update(project_id=project_id, user_id=user_id,
+                            name=name, parent_id=parent_id)
+            return folder
+
+        monkeypatch.setattr(folders_api.folder_service,
+                            "create_folder", create)
+        client = TestClient(make_app(folders_api.router))
+
+        resp = client.post("/api/v1/projects/1/folders", json={
+            "name": "电气", "parent_id": "root-1"})
+
+        assert resp.status_code == 201
+        assert resp.json()["parent_id"] == "root-1"
+        assert received == {"project_id": 1, "user_id": 7,
+                            "name": "电气", "parent_id": "root-1"}
+
+    def test_目录下文档归档使用当前项目权限链(self, monkeypatch):
+        received = {}
+
+        def assign(db, project_id, document_id, folder_id):
+            received.update(project_id=project_id, document_id=document_id,
+                            folder_id=folder_id)
+
+        monkeypatch.setattr(folders_api.folder_service,
+                            "assign_document", assign)
+        client = TestClient(make_app(folders_api.router))
+
+        resp = client.put(
+            "/api/v1/projects/1/folders/folder-1/documents/doc-1")
+
+        assert resp.status_code == 204
+        assert received == {"project_id": 1, "document_id": "doc-1",
+                            "folder_id": "folder-1"}

@@ -107,12 +107,18 @@
         :active-index="activeEv"
         :documents="documents"
         :evidences="evidences"
+        :folders="folders"
         :preview-label="previewLabel"
         :preview-url="previewUrl"
         :project="currentProject"
+        :selected-folder-id="selectedFolderId"
+        @create-folder="createFolder"
+        @delete-folder="deleteFolder"
         @focus-evidence="focusEvidence"
         @open-preview="openPreview"
         @open-project-document="previewProjectDocument"
+        @rename-folder="renameFolder"
+        @select-folder="selectedFolderId = $event"
         @upload="doUpload"
       />
     </div>
@@ -135,12 +141,18 @@
         :active-index="activeEv"
         :documents="documents"
         :evidences="evidences"
+        :folders="folders"
         :preview-label="previewLabel"
         :preview-url="previewUrl"
         :project="currentProject"
+        :selected-folder-id="selectedFolderId"
+        @create-folder="createFolder"
+        @delete-folder="deleteFolder"
         @focus-evidence="focusEvidence"
         @open-preview="openPreview"
         @open-project-document="previewProjectDocument"
+        @rename-folder="renameFolder"
+        @select-folder="selectedFolderId = $event"
         @upload="doUpload"
       />
     </el-drawer>
@@ -203,6 +215,8 @@ const projectId = computed(() => Number(route.params.id))
 const projects = ref([])
 const currentProject = ref(null)
 const documents = ref([])
+const folders = ref([])
+const selectedFolderId = ref('')
 const messages = ref([createWelcomeMessage()])
 const evidences = ref([])
 const conversationId = ref('')
@@ -287,6 +301,19 @@ async function loadDocuments() {
   }
 }
 
+async function loadFolders() {
+  try {
+    const data = await request('GET', '/projects/' + projectId.value + '/folders')
+    folders.value = data.items
+    if (selectedFolderId.value &&
+        !folders.value.some(folder => folder.folder_id === selectedFolderId.value)) {
+      selectedFolderId.value = ''
+    }
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
 async function loadWorkspace() {
   const [projectList, projectDetail] = await Promise.all([
     request('GET', '/projects'),
@@ -295,7 +322,7 @@ async function loadWorkspace() {
   projects.value = projectList.items
   currentProject.value = projectDetail
   workspace.rememberProject(projectId.value)
-  await loadDocuments()
+  await Promise.all([loadDocuments(), loadFolders()])
   await loadConversation()
 }
 
@@ -528,7 +555,8 @@ async function scrollToBottom() {
 
 async function doUpload(options) {
   try {
-    const data = await uploadDocument(projectId.value, options.file)
+    const data = await uploadDocument(
+      projectId.value, options.file, selectedFolderId.value)
     options.onSuccess(data)
     contextMode.value = 'files'
     await loadDocuments()
@@ -536,6 +564,36 @@ async function doUpload(options) {
   } catch (e) {
     options.onError(e)
     ElMessage.error('上传失败：' + e.message)
+  }
+}
+
+async function createFolder(payload) {
+  try {
+    await request('POST', '/projects/' + projectId.value + '/folders', payload)
+    await loadFolders()
+    ElMessage.success(payload.parent_id ? '子文件夹已创建' : '文件夹已创建')
+  } catch (e) {
+    ElMessage.error('创建失败：' + e.message)
+  }
+}
+
+async function renameFolder({ folder, name }) {
+  try {
+    await request('PATCH', '/projects/' + projectId.value + '/folders/' + folder.folder_id, { name })
+    await loadFolders()
+    ElMessage.success('文件夹已重命名')
+  } catch (e) {
+    ElMessage.error('重命名失败：' + e.message)
+  }
+}
+
+async function deleteFolder(folder) {
+  try {
+    await request('DELETE', '/projects/' + projectId.value + '/folders/' + folder.folder_id)
+    await loadFolders()
+    ElMessage.success('文件夹已删除')
+  } catch (e) {
+    ElMessage.error('删除失败：' + e.message)
   }
 }
 
@@ -569,6 +627,7 @@ function logout() {
 
 watch(projectId, async () => {
   window.clearTimeout(documentPollTimer)
+  selectedFolderId.value = ''
   resetConversationView()
   try {
     await loadWorkspace()

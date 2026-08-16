@@ -82,6 +82,30 @@ class Chunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class ProjectFolder(Base):
+    """A persisted project folder; parent_id enables arbitrary nesting."""
+    __tablename__ = "project_folders"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True)
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_folders.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    created_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now)
+
+
+class DocumentFolderLink(Base):
+    """Optional folder ownership kept separate for existing databases."""
+    __tablename__ = "document_folder_links"
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    folder_id: Mapped[str] = mapped_column(
+        ForeignKey("project_folders.id"), index=True)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)

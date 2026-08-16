@@ -32,11 +32,12 @@ async function request(method, path, body) {
   return data
 }
 
-export async function uploadDocument(projectId, file) {
+export async function uploadDocument(projectId, file, folderId = '') {
   const auth = useAuthStore()
   const form = new FormData()
   form.append('file', file)
-  const resp = await fetch(BASE + '/projects/' + projectId + '/documents', {
+  const folderQuery = folderId ? '?folder_id=' + encodeURIComponent(folderId) : ''
+  const resp = await fetch(BASE + '/projects/' + projectId + '/documents' + folderQuery, {
     method: 'POST',
     headers: auth.token ? { Authorization: 'Bearer ' + auth.token } : {},
     body: form

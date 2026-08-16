@@ -31,10 +31,16 @@ def _search_text(value: str) -> str:
     return re.sub(r"[\W_]+", "", (value or "").casefold())
 
 
+def _geographic_text(value: str) -> str:
+    """Allow abbreviated place names such as 深圳龙华 to match 深圳市龙华区."""
+    return re.sub(r"省|市|区|县|镇|街道", "", _search_text(value))
+
+
 def suggest_projects(db: Session, user_id: int, query: str,
                      limit: int = 3) -> list:
     """Rank only projects the user may access; no project name may leak."""
     keyword = _search_text(query)
+    geographic_keyword = _geographic_text(query)
     if not keyword:
         return []
 
@@ -42,14 +48,20 @@ def suggest_projects(db: Session, user_id: int, query: str,
     for project in list_projects(db, user_id):
         name = _search_text(project.name)
         description = _search_text(project.description)
+        geographic_name = _geographic_text(project.name)
+        geographic_description = _geographic_text(project.description)
         if name == keyword:
             score = 1000
         elif name.startswith(keyword):
             score = 800
         elif keyword in name:
             score = 600
+        elif geographic_keyword and geographic_keyword in geographic_name:
+            score = 500
         elif keyword in description:
             score = 300
+        elif geographic_keyword and geographic_keyword in geographic_description:
+            score = 200
         else:
             continue
         ranked.append((score, project.created_at, project))
