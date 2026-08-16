@@ -13,6 +13,7 @@ class ProjectRetrievalState(TypedDict, total=False):
     original_query: str
     query_type: str          # V0.1 恒为 PROJECT_GENERAL
     top_k: int
+    conversation_context: str
 
     evidences_raw: list      # retrieve 节点产出的 RetrievedChunk 列表
     retrieval_candidate_count: int

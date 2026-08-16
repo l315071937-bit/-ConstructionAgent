@@ -33,6 +33,7 @@ def make_app(router):
 class TestRetrievalAPI:
     def test_top_k传入graph_state并返回SSE(self, monkeypatch):
         received = {}
+        conversation = SimpleNamespace(id="conv-1")
 
         class FakeGraph:
             async def astream(self, state, stream_mode):
@@ -42,6 +43,15 @@ class TestRetrievalAPI:
                                  "confidence": 0.0}
 
         monkeypatch.setattr(retrieval_api, "build_graph", lambda: FakeGraph())
+        monkeypatch.setattr(
+            retrieval_api.conversation_service, "get_or_create_conversation",
+            lambda db, tenant_id, user_id, project_id, conversation_id: conversation)
+        monkeypatch.setattr(retrieval_api.conversation_service,
+                            "build_context", lambda db, item, query: "历史上下文")
+        monkeypatch.setattr(retrieval_api.conversation_service,
+                            "append_message", lambda *args, **kwargs: None)
+        monkeypatch.setattr(retrieval_api.conversation_service,
+                            "compact_if_needed", lambda *args, **kwargs: False)
         client = TestClient(make_app(retrieval_api.router))
 
         resp = client.post("/api/v1/projects/1/retrieval/query",
@@ -50,6 +60,8 @@ class TestRetrievalAPI:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
         assert received["top_k"] == 3
+        assert received["conversation_context"] == "历史上下文"
+        assert '"conversation_id": "conv-1"' in resp.text
         assert "event: done" in resp.text
 
     def test_top_k越界由请求模型拒绝(self):

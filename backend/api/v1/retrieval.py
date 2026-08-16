@@ -5,12 +5,15 @@ import uuid
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from agents.orchestrator import route
 from agents.project_retrieval.graph import build_graph
 from core.logger import get_logger
 from db.models import User
+from db.session import get_db
 from dependencies import get_current_project, get_current_user
+from services import conversation_service
 
 router = APIRouter(prefix="/projects/{project_id}/retrieval",
                    tags=["retrieval"])
@@ -44,13 +47,22 @@ def _sse(event: str, data: dict) -> str:
 @router.post("/query")
 async def query(body: QueryRequest,
                 project=Depends(get_current_project),
-                user: User = Depends(get_current_user)):
+                user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
     route(body.question)  # V0.1 仅 project 意图；standard/plan → 501
 
     request_id = "req_" + uuid.uuid4().hex[:12]
+    conversation = conversation_service.get_or_create_conversation(
+        db, user.tenant_id, user.id, project.id, body.conversation_id)
+    conversation_context = conversation_service.build_context(
+        db, conversation, body.question)
+    conversation_service.append_message(
+        db, conversation, "user", body.question,
+        {"request_id": request_id})
 
     async def event_gen():
-        yield _sse("started", {"request_id": request_id})
+        yield _sse("started", {"request_id": request_id,
+                               "conversation_id": conversation.id})
         try:
             graph = build_graph()
             final_state = None
@@ -60,7 +72,8 @@ async def query(body: QueryRequest,
                      "tenant_id": user.tenant_id,
                      "project_id": project.id,
                      "original_query": body.question,
-                     "top_k": body.top_k},
+                     "top_k": body.top_k,
+                     "conversation_context": conversation_context},
                     stream_mode=["updates", "values"]):
                 if mode == "updates":
                     for node_name, delta in chunk.items():
@@ -78,10 +91,19 @@ async def query(body: QueryRequest,
                     final_state = chunk
             if final_state is None:
                 final_state = {}
+            answer = final_state.get("answer", "")
+            evidences = final_state.get("evidences", [])
+            if answer:
+                conversation_service.append_message(
+                    db, conversation, "assistant", answer,
+                    {"request_id": request_id, "evidences": evidences,
+                     "confidence": final_state.get("confidence")})
+                conversation_service.compact_if_needed(db, conversation)
             yield _sse("done", {
                 "request_id": request_id,
-                "answer": final_state.get("answer", ""),
-                "evidences": final_state.get("evidences", []),
+                "conversation_id": conversation.id,
+                "answer": answer,
+                "evidences": evidences,
                 "confidence": final_state.get("confidence"),
             })
         except Exception as e:

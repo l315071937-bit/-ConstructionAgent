@@ -12,7 +12,7 @@
       @switch-project="projectPickerOpen = true"
     />
 
-    <div class="workspace-body" :class="{ 'without-evidence': !evidenceVisible }">
+    <div class="workspace-body">
       <WorkspaceSidebar
         class="desktop-navigation"
         :current-project="currentProject"
@@ -36,49 +36,9 @@
           </div>
         </header>
 
-        <div ref="chatScroll" class="conversation-scroll" :class="{ empty: !messages.length }">
-          <div v-if="!messages.length" class="start-panel">
-            <div class="start-heading">
-              <span class="start-mark"><el-icon><Search /></el-icon></span>
-              <div>
-                <h2>从当前项目资料开始查询</h2>
-                <p>{{ currentProject && currentProject.name }}</p>
-              </div>
-            </div>
-
-            <section class="project-lookup">
-              <div class="start-section-title">查找其他项目资料库</div>
-              <ProjectQuickSearch
-                v-model="startProjectQuery"
-                placeholder="例如：深圳市龙华区、学校名称"
-                @select="selectSuggestedProject"
-              />
-            </section>
-
-            <section class="start-section">
-              <div class="start-section-title">常用查询</div>
-              <div class="prompt-grid">
-                <button v-for="prompt in quickPrompts" :key="prompt" type="button" @click="usePrompt(prompt)">
-                  <span>{{ prompt }}</span>
-                  <el-icon><ArrowRight /></el-icon>
-                </button>
-              </div>
-            </section>
-
-            <section v-if="recentProjects.length" class="start-section">
-              <div class="start-section-title">最近访问的项目</div>
-              <div class="recent-projects">
-                <button v-for="project in recentProjects" :key="project.project_id" type="button"
-                        @click="lockProject(project)">
-                  <el-icon><Folder /></el-icon>
-                  <span>{{ project.name }}</span>
-                </button>
-              </div>
-            </section>
-          </div>
-
-          <div v-else class="message-list">
-            <article v-for="(message, i) in messages" :key="i" class="message" :class="message.role">
+        <div ref="chatScroll" class="conversation-scroll">
+          <div class="message-list">
+            <article v-for="(message, i) in messages" :key="message.message_id || i" class="message" :class="message.role">
               <div class="message-author">{{ message.role === 'user' ? '你' : 'ConstructionAgent' }}</div>
               <div class="message-content">
                 <template v-if="message.role === 'ai'">
@@ -87,6 +47,25 @@
                             @click="focusMessageEvidence(message, segment.ref)">E{{ segment.ref }}</button>
                     <span v-else>{{ segment.text }}</span>
                   </span>
+                  <div v-if="message.actions" class="assistant-actions">
+                    <button v-for="action in message.actions" :key="action.id" type="button"
+                            :disabled="action.disabled" @click="handleAssistantAction(action)">
+                      <el-icon><component :is="action.icon" /></el-icon>
+                      <span>{{ action.label }}</span>
+                      <small v-if="action.disabled">即将开放</small>
+                    </button>
+                  </div>
+                  <div v-if="message.projects" class="project-suggestions">
+                    <button v-for="project in message.projects" :key="project.project_id" type="button"
+                            @click="chooseProjectFromChat(project)">
+                      <span class="suggestion-folder"><el-icon><Folder /></el-icon></span>
+                      <span>
+                        <strong>{{ project.name }}</strong>
+                        <small>{{ project.description || '可访问项目' }} · {{ project.document_count || 0 }} 份资料</small>
+                      </span>
+                      <el-icon><ArrowRight /></el-icon>
+                    </button>
+                  </div>
                   <div v-if="message.fallback" class="fallback">未找到足够证据，建议人工核对项目资料。</div>
                 </template>
                 <template v-else>{{ message.content }}</template>
@@ -122,15 +101,18 @@
       </main>
 
       <EvidencePanel
-        v-if="evidenceVisible"
         class="desktop-evidence"
+        v-model:mode="contextMode"
+        :active-document-id="activeDocumentId"
         :active-index="activeEv"
         :documents="documents"
         :evidences="evidences"
+        :preview-label="previewLabel"
         :preview-url="previewUrl"
-        @documents="documentsOpen = true"
-        @open-document="openEvidenceDocument"
+        :project="currentProject"
+        @focus-evidence="focusEvidence"
         @open-preview="openPreview"
+        @open-project-document="previewProjectDocument"
         @upload="doUpload"
       />
     </div>
@@ -146,15 +128,19 @@
       />
     </el-drawer>
 
-    <el-drawer v-model="evidenceDrawerOpen" title="检索依据" size="360px">
+    <el-drawer v-model="evidenceDrawerOpen" title="项目工作区" size="min(420px, 94vw)">
       <EvidencePanel
+        v-model:mode="contextMode"
+        :active-document-id="activeDocumentId"
         :active-index="activeEv"
         :documents="documents"
         :evidences="evidences"
+        :preview-label="previewLabel"
         :preview-url="previewUrl"
-        @documents="documentsOpen = true"
-        @open-document="openEvidenceDocument"
+        :project="currentProject"
+        @focus-evidence="focusEvidence"
         @open-preview="openPreview"
+        @open-project-document="previewProjectDocument"
         @upload="doUpload"
       />
     </el-drawer>
@@ -183,41 +169,7 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="documentsOpen" title="项目资料库" size="min(520px, 94vw)">
-      <div class="library-context">
-        <span class="library-project-icon"><el-icon><Lock /></el-icon></span>
-        <div>
-          <strong>{{ currentProject && currentProject.name }}</strong>
-          <span>已锁定当前项目 · {{ documents.length }} 份资料</span>
-        </div>
-      </div>
-      <div class="library-toolbar">
-        <el-input v-model="documentQuery" clearable placeholder="搜索文件名称">
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
-        <el-select v-model="documentType" class="document-type-filter" placeholder="全部类型">
-          <el-option label="全部类型" value="" />
-          <el-option v-for="type in documentTypes" :key="type" :label="type" :value="type" />
-        </el-select>
-      </div>
-      <el-empty v-if="!documents.length" description="暂无项目资料" :image-size="72" />
-      <el-empty v-else-if="!filteredDocuments.length" description="没有匹配的文件" :image-size="64" />
-      <button v-for="doc in filteredDocuments" :key="doc.document_id" class="document-row" type="button"
-              @click="openProjectDocument(doc)">
-        <span class="document-type">{{ fileType(doc.file_name) }}</span>
-        <div class="document-main">
-          <div class="document-name">{{ doc.file_name }}</div>
-          <div class="document-meta">{{ doc.page_count }} 页 · {{ doc.chunk_count }} 个片段</div>
-        </div>
-        <el-tag size="small" :type="statusType(doc.parse_status)">{{ statusLabel(doc.parse_status) }}</el-tag>
-      </button>
-    </el-drawer>
-
     <el-drawer v-model="settingsOpen" title="工作台设置" size="380px">
-      <div class="setting-row">
-        <div><strong>显示 Evidence 栏</strong><span>桌面端右侧检索依据</span></div>
-        <el-switch v-model="evidenceVisible" />
-      </div>
       <div class="setting-row">
         <div><strong>紧凑模式</strong><span>缩小消息与面板间距</span></div>
         <el-switch v-model="compactMode" />
@@ -233,7 +185,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, Folder, Lock, Position, Search } from '@element-plus/icons-vue'
+import { ArrowRight, EditPen, Folder, Lock, Position, Reading, Search } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import EvidencePanel from '../components/EvidencePanel.vue'
 import ProjectQuickSearch from '../components/ProjectQuickSearch.vue'
@@ -251,19 +203,19 @@ const projectId = computed(() => Number(route.params.id))
 const projects = ref([])
 const currentProject = ref(null)
 const documents = ref([])
-const messages = ref([])
+const messages = ref([createWelcomeMessage()])
 const evidences = ref([])
+const conversationId = ref('')
 const question = ref('')
 const thinking = ref(false)
 const stage = ref('')
 const activeEv = ref(-1)
 const previewUrl = ref('')
+const previewLabel = ref('')
+const activeDocumentId = ref('')
+const contextMode = ref('files')
 const projectQuery = ref('')
-const startProjectQuery = ref('')
-const documentQuery = ref('')
-const documentType = ref('')
 const projectPickerOpen = ref(false)
-const documentsOpen = ref(false)
 const settingsOpen = ref(false)
 const navigationOpen = ref(false)
 const evidenceDrawerOpen = ref(false)
@@ -273,17 +225,6 @@ let previewBlobUrl = ''
 let previewLoadVersion = 0
 let documentPollTimer = 0
 
-const quickPrompts = [
-  '这个项目采用什么接地系统？',
-  '项目中的配电箱安装有什么要求？',
-  '消防应急照明采用什么方式？',
-  '列出项目资料中的关键技术参数。'
-]
-
-const evidenceVisible = computed({
-  get: () => workspace.evidenceVisible,
-  set: value => workspace.setEvidenceVisible(value)
-})
 const compactMode = computed({
   get: () => workspace.compactMode,
   set: value => workspace.setCompactMode(value)
@@ -297,21 +238,22 @@ const sessionTitle = computed(() => {
   const first = messages.value.find(message => message.role === 'user')
   return first ? first.content : ''
 })
-const recentProjects = computed(() => workspace.recentProjectIds
-  .map(id => projects.value.find(project => project.project_id === id))
-  .filter(project => project && project.project_id !== projectId.value)
-  .slice(0, 4))
 const matchedProjects = computed(() => {
   const keyword = projectQuery.value.trim().toLowerCase()
   return projects.value.filter(project => !keyword || project.name.toLowerCase().includes(keyword))
 })
-const documentTypes = computed(() => [...new Set(documents.value.map(doc => fileType(doc.file_name)))].sort())
-const filteredDocuments = computed(() => {
-  const keyword = documentQuery.value.trim().toLowerCase()
-  return documents.value.filter(doc =>
-    (!keyword || doc.file_name.toLowerCase().includes(keyword)) &&
-    (!documentType.value || fileType(doc.file_name) === documentType.value))
-})
+
+function createWelcomeMessage() {
+  return {
+    role: 'ai',
+    content: '你好，我是智能 AI 建筑辅助功能。\n我可以为您查找项目资料、查询工程规范、编制施工方案。请告诉我您想处理的项目或问题。',
+    actions: [
+      { id: 'project', label: '查找项目资料', icon: Search },
+      { id: 'standard', label: '查询工程规范', icon: Reading, disabled: true },
+      { id: 'plan', label: '编制施工方案', icon: EditPen, disabled: true }
+    ]
+  }
+}
 
 function renderAnswer(text) {
   const segments = []
@@ -325,19 +267,6 @@ function renderAnswer(text) {
   }
   if (last < text.length) segments.push({ text: text.slice(last) })
   return segments
-}
-
-function statusLabel(status) {
-  return { PENDING: '等待处理', PARSING: '解析中', READY: '可检索', FAILED: '解析失败' }[status] || status
-}
-
-function statusType(status) {
-  return { PENDING: 'info', PARSING: 'warning', READY: 'success', FAILED: 'danger' }[status] || 'info'
-}
-
-function fileType(fileName) {
-  const extension = fileName.split('.').pop()
-  return extension ? extension.slice(0, 4).toUpperCase() : 'FILE'
 }
 
 function scheduleDocumentPoll() {
@@ -367,6 +296,34 @@ async function loadWorkspace() {
   currentProject.value = projectDetail
   workspace.rememberProject(projectId.value)
   await loadDocuments()
+  await loadConversation()
+}
+
+async function loadConversation() {
+  const storedId = workspace.conversationIds[String(projectId.value)]
+  if (!storedId) return
+  try {
+    const data = await request(
+      'GET', '/projects/' + projectId.value + '/conversations/' + storedId)
+    conversationId.value = data.conversation_id
+    const restored = data.messages.map(message => ({
+      message_id: message.message_id,
+      role: message.role === 'assistant' ? 'ai' : message.role,
+      content: message.content,
+      evidences: message.metadata && message.metadata.evidences
+        ? message.metadata.evidences : []
+    }))
+    messages.value = [createWelcomeMessage(), ...restored]
+    const latestWithEvidence = [...restored].reverse().find(
+      message => message.evidences && message.evidences.length)
+    if (latestWithEvidence) {
+      await setEvidences(latestWithEvidence.evidences)
+      contextMode.value = 'evidence'
+    }
+  } catch (error) {
+    workspace.clearConversation(projectId.value)
+    conversationId.value = ''
+  }
 }
 
 function revokeEvidenceUrls() {
@@ -380,6 +337,8 @@ function clearPreview() {
   if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl)
   previewBlobUrl = ''
   previewUrl.value = ''
+  previewLabel.value = ''
+  activeDocumentId.value = ''
 }
 
 async function setEvidences(items) {
@@ -401,6 +360,7 @@ async function setEvidences(items) {
 async function focusEvidence(index) {
   activeEv.value = index - 1
   const evidence = evidences.value[index - 1]
+  contextMode.value = 'evidence'
   clearPreview()
   if (!evidence || !evidence.thumbnail_url) return
   const version = previewLoadVersion
@@ -413,7 +373,8 @@ async function focusEvidence(index) {
     }
     previewBlobUrl = blobUrl
     previewUrl.value = blobUrl + '#page=' + evidence.page
-    workspace.setEvidenceVisible(true)
+    previewLabel.value = evidence.file_name + ' · 第 ' + evidence.page + ' 页'
+    activeDocumentId.value = evidence.file_id
     if (window.innerWidth <= 1040) evidenceDrawerOpen.value = true
   } catch (e) {
     ElMessage.error('无法打开证据文件：' + e.message)
@@ -425,28 +386,30 @@ async function focusMessageEvidence(message, index) {
   await focusEvidence(index)
 }
 
-async function openEvidenceDocument(index) {
-  activeEv.value = index - 1
-  const evidence = evidences.value[index - 1]
-  if (!evidence || !evidence.thumbnail_url) return
-  const viewer = window.open('about:blank', '_blank')
-  if (viewer) viewer.opener = null
+async function previewProjectDocument(doc) {
+  contextMode.value = 'files'
+  clearPreview()
+  const version = previewLoadVersion
   try {
-    const blobUrl = await fetchProtectedBlobUrl(
-      '/projects/' + projectId.value + '/documents/' + evidence.file_id + '/preview')
-    const target = blobUrl + '#page=' + evidence.page
-    if (viewer) {
-      viewer.location.replace(target)
-      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
-    } else {
-      clearPreview()
-      previewBlobUrl = blobUrl
-      previewUrl.value = target
-      ElMessage.warning('浏览器拦截了新窗口，已在 Evidence 栏打开')
+    let blobUrl
+    try {
+      blobUrl = await fetchProtectedBlobUrl(
+        '/projects/' + projectId.value + '/documents/' + doc.document_id + '/preview')
+    } catch (previewError) {
+      blobUrl = await fetchProtectedBlobUrl(
+        '/projects/' + projectId.value + '/documents/' + doc.document_id + '/file')
     }
+    if (version !== previewLoadVersion) {
+      URL.revokeObjectURL(blobUrl)
+      return
+    }
+    previewBlobUrl = blobUrl
+    previewUrl.value = blobUrl
+    previewLabel.value = doc.file_name
+    activeDocumentId.value = doc.document_id
+    if (window.innerWidth <= 1040) evidenceDrawerOpen.value = true
   } catch (e) {
-    if (viewer) viewer.close()
-    ElMessage.error('无法打开完整文件：' + e.message)
+    ElMessage.error('无法打开项目文件：' + e.message)
   }
 }
 
@@ -455,12 +418,18 @@ function openPreview() {
 }
 
 function openEvidencePanel() {
+  contextMode.value = 'evidence'
   if (window.innerWidth <= 1040) evidenceDrawerOpen.value = true
-  else workspace.setEvidenceVisible(true)
 }
 
 function newConversation() {
-  messages.value = []
+  workspace.clearConversation(projectId.value)
+  conversationId.value = ''
+  resetConversationView()
+}
+
+function resetConversationView() {
+  messages.value = [createWelcomeMessage()]
   question.value = ''
   thinking.value = false
   ++evidenceLoadVersion
@@ -470,9 +439,28 @@ function newConversation() {
   clearPreview()
 }
 
-function usePrompt(prompt) {
-  question.value = prompt
-  nextTick(() => ask())
+function handleAssistantAction(action) {
+  if (action.disabled) {
+    ElMessage.info(action.label + ' Agent 后端尚未开放')
+    return
+  }
+  messages.value.push({ role: 'user', content: action.label })
+  messages.value.push({
+    role: 'ai',
+    content: '请直接输入项目名称、所在地区或项目类型，我会为您推荐最可能的项目。'
+  })
+  nextTick(scrollToBottom)
+}
+
+async function findProjectCandidates(query) {
+  if (query.length < 2) return []
+  try {
+    const data = await request(
+      'GET', '/projects/suggestions?q=' + encodeURIComponent(query) + '&limit=3')
+    return data.items || []
+  } catch (error) {
+    return []
+  }
 }
 
 async function ask() {
@@ -481,6 +469,19 @@ async function ask() {
   messages.value.push({ role: 'user', content: query })
   question.value = ''
   thinking.value = true
+  stage.value = '正在理解你的需求'
+  await scrollToBottom()
+  const projectCandidates = await findProjectCandidates(query)
+  if (projectCandidates.length) {
+    messages.value.push({
+      role: 'ai',
+      content: '我找到了以下可能相关的项目。请选择一个项目，确认后我会锁定知识库，并在右侧显示该项目的全部资料。',
+      projects: projectCandidates
+    })
+    thinking.value = false
+    await scrollToBottom()
+    return
+  }
   stage.value = '正在分析问题'
   ++evidenceLoadVersion
   revokeEvidenceUrls()
@@ -493,9 +494,14 @@ async function ask() {
   try {
     await streamQuery(projectId.value, query, (event, data) => {
       if (event === 'stage') stage.value = data.message
+      if (event === 'started' && data.conversation_id) {
+        conversationId.value = data.conversation_id
+        workspace.setConversation(projectId.value, data.conversation_id)
+      }
       if (event === 'evidence') {
         answerMessage.evidences = data.evidences
         setEvidences(data.evidences)
+        contextMode.value = 'evidence'
       }
       if (event === 'token') answerMessage.content += data.delta
       if (event === 'done') {
@@ -506,7 +512,7 @@ async function ask() {
       }
       if (event === 'error') answerMessage.content = '请求失败：' + data.message
       scrollToBottom()
-    }, topK.value)
+    }, topK.value, conversationId.value || null)
   } catch (e) {
     answerMessage.content = '请求失败：' + e.message
   } finally {
@@ -524,7 +530,7 @@ async function doUpload(options) {
   try {
     const data = await uploadDocument(projectId.value, options.file)
     options.onSuccess(data)
-    documentsOpen.value = true
+    contextMode.value = 'files'
     await loadDocuments()
     ElMessage.success('已上传：' + data.file_name)
   } catch (e) {
@@ -533,45 +539,26 @@ async function doUpload(options) {
   }
 }
 
-async function openProjectDocument(doc) {
-  const viewer = window.open('about:blank', '_blank')
-  if (viewer) viewer.opener = null
-  try {
-    let blobUrl
-    try {
-      blobUrl = await fetchProtectedBlobUrl(
-        '/projects/' + projectId.value + '/documents/' + doc.document_id + '/preview')
-    } catch (previewError) {
-      blobUrl = await fetchProtectedBlobUrl(
-        '/projects/' + projectId.value + '/documents/' + doc.document_id + '/file')
-    }
-    if (!viewer) {
-      URL.revokeObjectURL(blobUrl)
-      ElMessage.warning('浏览器拦截了文件窗口，请允许本站打开新窗口')
-      return
-    }
-    viewer.location.replace(blobUrl)
-    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
-  } catch (e) {
-    if (viewer) viewer.close()
-    ElMessage.error('无法打开项目文件：' + e.message)
-  }
-}
-
 function selectSuggestedProject(project) {
   projectQuery.value = ''
-  startProjectQuery.value = ''
+  lockProject(project)
+}
+
+function chooseProjectFromChat(project) {
   lockProject(project, true)
 }
 
-function lockProject(project, showLibrary = false) {
+function lockProject(project, fromChat = false) {
   projectPickerOpen.value = false
   navigationOpen.value = false
   if (project.project_id !== projectId.value) {
     router.push({ path: '/projects/' + project.project_id,
-                  query: showLibrary ? { library: '1' } : {} })
-  } else if (showLibrary) {
-    documentsOpen.value = true
+                  query: fromChat ? { selected: '1' } : {} })
+  } else if (fromChat) {
+    contextMode.value = 'files'
+    messages.value.push({
+      role: 'ai', content: '已锁定“' + project.name + '”，右侧已显示该项目的全部资料。'
+    })
   }
 }
 
@@ -582,18 +569,21 @@ function logout() {
 
 watch(projectId, async () => {
   window.clearTimeout(documentPollTimer)
-  documentQuery.value = ''
-  documentType.value = ''
-  newConversation()
+  resetConversationView()
   try {
     await loadWorkspace()
+    if (route.query.selected === '1') {
+      contextMode.value = 'files'
+      if (window.innerWidth <= 1040) evidenceDrawerOpen.value = true
+      messages.value.push({
+        role: 'ai',
+        content: '已锁定“' + currentProject.value.name + '”，右侧已显示该项目的全部资料。'
+      })
+      router.replace({ path: route.path })
+    }
   } catch (e) {
     ElMessage.error(e.message)
   }
-}, { immediate: true })
-
-watch(() => route.query.library, value => {
-  if (value === '1') documentsOpen.value = true
 }, { immediate: true })
 
 onBeforeUnmount(() => {
@@ -607,7 +597,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .workspace { --topbar-height: 56px; height: 100vh; background: #eef1f5; color: #24303c; overflow: hidden; }
 .workspace-body { height: calc(100vh - var(--topbar-height)); display: grid; grid-template-columns: 252px minmax(520px, 1fr) 340px; }
-.workspace-body.without-evidence { grid-template-columns: 252px minmax(520px, 1fr); }
 .conversation-panel { min-width: 0; display: grid; grid-template-rows: 64px minmax(0, 1fr) auto; background: #fff; }
 .conversation-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 24px; border-bottom: 1px solid #e2e6ea; }
 .conversation-title { min-width: 0; }
@@ -617,22 +606,6 @@ onBeforeUnmount(() => {
 .knowledge-status :deep(.el-icon) { color: #25855a; }
 .knowledge-status strong { color: #2d3748; }
 .conversation-scroll { min-height: 0; overflow-y: auto; background: #f8fafc; }
-.conversation-scroll.empty { display: grid; place-items: center; }
-.start-panel { width: min(720px, calc(100% - 40px)); padding: 28px 0 40px; }
-.start-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
-.start-mark { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 6px; background: #e6eef9; color: #1f5fbf; font-size: 20px; }
-.start-heading h2 { margin: 0; font-size: 22px; letter-spacing: 0; }
-.start-heading p { margin: 6px 0 0; color: #708090; font-size: 13px; }
-.start-section { margin-top: 24px; }
-.start-section-title { margin-bottom: 10px; color: #687586; font-size: 12px; font-weight: 600; }
-.project-lookup { margin-bottom: 24px; }
-.project-lookup :deep(.el-input__wrapper) { min-height: 42px; }
-.prompt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #dfe4ea; border-left: 1px solid #dfe4ea; }
-.prompt-grid button { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 0; border-right: 1px solid #dfe4ea; border-bottom: 1px solid #dfe4ea; background: #fff; color: #344054; cursor: pointer; text-align: left; font-size: 13px; }
-.prompt-grid button:hover { background: #f2f6fb; color: #174ea6; }
-.recent-projects { display: flex; flex-wrap: wrap; gap: 8px; }
-.recent-projects button { max-width: 240px; height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid #d7dde5; border-radius: 5px; background: #fff; color: #52606d; cursor: pointer; }
-.recent-projects button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .message-list { width: min(860px, calc(100% - 44px)); margin: 0 auto; padding: 28px 0 80px; }
 .message { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid #e4e8ed; }
 .message-author { color: #667085; font-size: 12px; font-weight: 600; }
@@ -640,6 +613,20 @@ onBeforeUnmount(() => {
 .message.user .message-content { color: #17202a; font-weight: 500; }
 .citation { display: inline-grid; place-items: center; min-width: 25px; height: 20px; margin: 0 2px; padding: 0 5px; border: 1px solid #8eb0df; border-radius: 4px; background: #edf4ff; color: #174ea6; cursor: pointer; font-size: 11px; vertical-align: 1px; }
 .citation:hover { background: #dbe9fb; }
+.assistant-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.assistant-actions button { min-width: 0; min-height: 48px; display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid #d4dce7; border-radius: 6px; background: #fff; color: #344054; cursor: pointer; text-align: left; }
+.assistant-actions button:hover:not(:disabled) { border-color: #7698c8; background: #f3f7fc; color: #174ea6; }
+.assistant-actions button:disabled { color: #98a2b3; cursor: not-allowed; }
+.assistant-actions button span { min-width: 0; flex: 1; font-size: 12px; }
+.assistant-actions button small { color: #98a2b3; font-size: 9px; white-space: nowrap; }
+.project-suggestions { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
+.project-suggestions > button { width: 100%; min-height: 58px; display: grid; grid-template-columns: 34px minmax(0, 1fr) 16px; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #d4dce7; border-radius: 6px; background: #fff; color: #344054; cursor: pointer; text-align: left; }
+.project-suggestions > button:hover { border-color: #7698c8; background: #f3f7fc; }
+.suggestion-folder { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 5px; background: #eaf1fb; color: #1f5fbf; }
+.project-suggestions > button > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.project-suggestions strong, .project-suggestions small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-suggestions strong { font-size: 12px; }
+.project-suggestions small { color: #7a8594; font-size: 10px; }
 .fallback { margin-top: 10px; padding-left: 9px; border-left: 3px solid #d69e2e; color: #8a5a12; }
 .stage-line { color: #667085; }
 .stage-dot { width: 7px; height: 7px; display: inline-block; margin-right: 8px; border-radius: 50%; background: #2f6fc7; animation: pulse 1.2s infinite; }
@@ -656,20 +643,6 @@ onBeforeUnmount(() => {
 .picker-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .picker-copy strong, .picker-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .picker-copy small { color: #7b8794; }
-.library-context { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid #d8e1ed; border-radius: 6px; background: #f7f9fc; }
-.library-project-icon { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 5px; background: #e8f0fb; color: #1f5fbf; }
-.library-context > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.library-context strong, .library-context span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.library-context strong { font-size: 13px; }
-.library-context span { color: #7a8594; font-size: 11px; }
-.library-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 8px; margin: 14px 0 6px; }
-.document-type-filter { width: 112px; }
-.document-row { width: 100%; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px 4px; border: 0; border-bottom: 1px solid #e5e8ec; background: transparent; color: #263445; cursor: pointer; text-align: left; }
-.document-row:hover { background: #f5f8fc; }
-.document-type { width: 42px; height: 34px; display: grid; place-items: center; border-radius: 4px; background: #edf1f5; color: #52606d; font-size: 10px; font-weight: 700; }
-.document-main { min-width: 0; }
-.document-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.document-meta { margin-top: 4px; color: #8a94a3; font-size: 11px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid #e5e8ec; }
 .setting-row > div { display: flex; flex-direction: column; gap: 5px; }
 .setting-row strong, .setting-title strong { font-size: 13px; }
@@ -682,21 +655,19 @@ onBeforeUnmount(() => {
 @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 @media (max-width: 1280px) {
   .workspace-body { grid-template-columns: 224px minmax(480px, 1fr) 300px; }
-  .workspace-body.without-evidence { grid-template-columns: 224px minmax(480px, 1fr); }
 }
 @media (max-width: 1040px) {
-  .workspace-body, .workspace-body.without-evidence { grid-template-columns: 224px minmax(0, 1fr); }
+  .workspace-body { grid-template-columns: 224px minmax(0, 1fr); }
   .desktop-evidence { display: none; }
 }
 @media (max-width: 760px) {
-  .workspace-body, .workspace-body.without-evidence { grid-template-columns: minmax(0, 1fr); }
+  .workspace-body { grid-template-columns: minmax(0, 1fr); }
   .desktop-navigation { display: none; }
   .conversation-header { padding: 0 14px; }
   .knowledge-status span { display: none; }
-  .start-panel { width: calc(100% - 28px); }
-  .prompt-grid { grid-template-columns: 1fr; }
   .message-list { width: calc(100% - 28px); }
   .message { grid-template-columns: 1fr; gap: 5px; }
+  .assistant-actions { grid-template-columns: 1fr; }
   .composer { margin: 0 10px 10px; }
 }
 </style>

@@ -9,15 +9,20 @@ SYSTEM_PROMPT = """你是建筑工程领域的资料检索助手。
 4. 证据不足时明确说明，不得猜测；
 5. 发现证据之间矛盾时，并列列出矛盾并提示人工确认，不得自行选择。"""
 
-def build_answer_messages(question: str, evidences: list) -> list:
+def build_answer_messages(question: str, evidences: list,
+                          conversation_context: str = "") -> list:
     ctx = []
     for i, ev in enumerate(evidences, start=1):
         ctx.append("[E{num}] 文件：{fname} 页码：{page}\n内容：{content}".format(
             num=i, fname=ev['file_name'], page=ev['page'],
             content=ev['content']))
     evidence_text = "\n\n".join(ctx) if ctx else "（无证据）"
-    user_msg = ("用户问题：{q}\n\n项目资料 Evidence：\n{ev}\n\n请基于 Evidence 回答，并标注 [En] 引用。").format(
-                    q=question, ev=evidence_text)
+    history = conversation_context or "（无历史上下文）"
+    user_msg = (
+        "对话上下文（仅用于理解指代和用户目标，不可作为工程事实依据）：\n"
+        "{history}\n\n用户当前问题：{q}\n\n项目资料 Evidence：\n{ev}\n\n"
+        "请基于本轮 Evidence 回答，并标注 [En] 引用。"
+    ).format(history=history, q=question, ev=evidence_text)
     return [{"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg}]
 

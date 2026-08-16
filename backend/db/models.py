@@ -3,8 +3,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (JSON, DateTime, ForeignKey, Integer, String, Text,
-                        UniqueConstraint)
+from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Integer,
+                        String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.session import Base
@@ -80,3 +80,51 @@ class Chunk(Base):
     bbox: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_type: Mapped[str] = mapped_column(String(64), default="PROJECT_DOCUMENT")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    agent_type: Mapped[str] = mapped_column(String(32), default="project")
+    title: Mapped[str] = mapped_column(String(128), default="新对话")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    summary_until_message_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True)
+    state_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now)
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True,
+                                    autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id"), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    token_count: Mapped[int] = mapped_column(Integer, default=0)
+    extra_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class LongTermMemory(Base):
+    __tablename__ = "long_term_memories"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projects.id"), nullable=True)
+    memory_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("conversation_messages.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now)

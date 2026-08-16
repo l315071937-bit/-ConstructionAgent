@@ -184,7 +184,7 @@ Response: 200 application/pdf（Content-Disposition: inline）
 
 - 返回 Evidence 使用的完整可翻页 PDF：原 PDF 直接返回，Office 返回解析阶段转换出的 PDF
 - 前端通过带 Bearer Token 的 fetch 获取 Blob URL，并附加 `#page=N` 定位 Evidence 页码
-- 点击右侧证据缩略图时在新标签页打开，用户可向前后翻页查看完整上下文
+- 点击右侧证据缩略图时在固定项目工作区加载完整 PDF 并定位页码；用户可在右栏翻页或新窗口打开
 
 ## GET /api/v1/projects/{project_id}/documents/{document_id}/pages/{page}/image
 
@@ -204,7 +204,7 @@ Content-Type: application/json
 Request:
 {
   "question": "3号楼二层卫生间防水高度是多少？",
-  "conversation_id": null,          // V0.1 可为空，预留
+  "conversation_id": null,          // 首轮为空；后续传 started/done 返回的 ID
   "top_k": 8                        // 可选，默认 8，范围 1~20
 }
 Response: 200 text/event-stream
@@ -214,7 +214,7 @@ Response: 200 text/event-stream
 
 ```
 event: started
-data: {"request_id": "req_xxx"}
+data: {"request_id": "req_xxx", "conversation_id": "conv_xxx"}
 
 event: stage
 data: {"stage": "retrieving", "message": "正在检索项目资料"}
@@ -226,7 +226,7 @@ event: token             ← LLM 流式输出（可多条）
 data: {"delta": "根据"}
 
 event: done
-data: {"request_id": "req_xxx", "answer": "完整回答...", "evidences": [Evidence...]}
+data: {"request_id": "req_xxx", "conversation_id": "conv_xxx", "answer": "完整回答...", "evidences": [Evidence...]}
 
 event: error
 data: {"code": "RETRIEVAL_FAILED", "message": "..."}
@@ -259,6 +259,20 @@ data: {"code": "RETRIEVAL_FAILED", "message": "..."}
 - LLM 生成时以 `[E1]` `[E2]` 标注引用证据序号，序号与 done 事件 evidences 数组下标一致
 - Citation 校验：answer 中的数字/图号/材料名必须在对应 Evidence.content 中出现，
   否则触发 validate 重生成（02 §6.20 的 V0.1 简化版：仅校验显式引用与硬事实项）
+
+## Conversation Memory
+
+```
+GET  /api/v1/projects/{project_id}/conversations
+GET  /api/v1/projects/{project_id}/conversations/{conversation_id}
+POST /api/v1/projects/{project_id}/conversations/{conversation_id}/memories
+```
+
+- 完整原始消息保存在 `conversation_messages`，滑动窗口只控制发送给模型的最近消息
+- 达到 Token 阈值后，较早消息生成增量摘要；摘要不得替代项目 Evidence
+- `conversation_id` 与 tenant、user、project 严格绑定，跨项目复用返回 409
+- 长期记忆仅允许写入用户明确确认的偏好、决定或待办；工程参数仍需重新检索原始资料
+- 项目级记忆与用户通用记忆分开，检索时最多注入相关的 5 条已确认记忆
 
 ---
 

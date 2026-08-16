@@ -80,7 +80,8 @@ def route_after_confidence(state: dict) -> str:
 
 def generate_answer(state: dict) -> dict:
     messages = build_answer_messages(state["original_query"],
-                                     state["evidences"])
+                                     state["evidences"],
+                                     state.get("conversation_context", ""))
     answer = get_llm().chat(messages)
     return {"answer": answer}
 

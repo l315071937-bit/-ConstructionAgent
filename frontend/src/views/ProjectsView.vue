@@ -68,10 +68,6 @@
 
     <el-drawer v-model="settingsOpen" title="工作台设置" size="380px">
       <div class="setting-row">
-        <div><strong>显示 Evidence 栏</strong><span>进入项目后的右侧检索依据</span></div>
-        <el-switch v-model="evidenceVisible" />
-      </div>
-      <div class="setting-row">
         <div><strong>紧凑模式</strong><span>缩小工作台信息间距</span></div>
         <el-switch v-model="compactMode" />
       </div>
@@ -111,10 +107,6 @@ const recentProjects = computed(() => workspace.recentProjectIds
   .map(id => projects.value.find(project => project.project_id === id))
   .filter(Boolean)
   .slice(0, 4))
-const evidenceVisible = computed({
-  get: () => workspace.evidenceVisible,
-  set: value => workspace.setEvidenceVisible(value)
-})
 const compactMode = computed({
   get: () => workspace.compactMode,
   set: value => workspace.setCompactMode(value)

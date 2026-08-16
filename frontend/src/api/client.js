@@ -60,7 +60,7 @@ export async function fetchProtectedBlobUrl(path) {
 }
 
 // SSE 流式问答：onEvent(event, data) 回调
-export async function streamQuery(projectId, question, onEvent, topK = 8) {
+export async function streamQuery(projectId, question, onEvent, topK = 8, conversationId = null) {
   const auth = useAuthStore()
   const resp = await fetch(BASE + '/projects/' + projectId + '/retrieval/query', {
     method: 'POST',
@@ -68,7 +68,7 @@ export async function streamQuery(projectId, question, onEvent, topK = 8) {
       'Content-Type': 'application/json',
       Authorization: 'Bearer ' + auth.token
     },
-    body: JSON.stringify({ question, top_k: topK })
+    body: JSON.stringify({ question, top_k: topK, conversation_id: conversationId })
   })
   if (!resp.ok || !resp.body) {
     const data = await resp.json().catch(() => ({}))

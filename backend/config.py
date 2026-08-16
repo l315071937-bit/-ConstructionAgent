@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-chat"
     llm_temperature: float = 0.2
 
+    # Conversation memory: raw messages remain in SQL; only prompt context slides.
+    conversation_recent_token_budget: int = 3000
+    conversation_summary_trigger_tokens: int = 6000
+    conversation_keep_recent_messages: int = 8
+    memory_recall_limit: int = 5
+
     # 检索置信度规则阈值（V0.1 规则版，后续由 evaluation/ 实验数据校准）
     # 注意：Milvus COSINE 度量下，0.3~0.4 已是正常相关水平
     retrieval_confidence_threshold: float = 0.25

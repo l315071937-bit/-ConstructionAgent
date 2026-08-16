@@ -11,7 +11,7 @@ function readJson(key, fallback) {
 export const useWorkspaceStore = defineStore('workspace', {
   state: () => ({
     recentProjectIds: readJson('ca_recent_projects', []),
-    evidenceVisible: readJson('ca_evidence_visible', true),
+    conversationIds: readJson('ca_project_conversations', {}),
     compactMode: readJson('ca_compact_mode', false),
     topK: readJson('ca_top_k', 8)
   }),
@@ -21,10 +21,6 @@ export const useWorkspaceStore = defineStore('workspace', {
       this.recentProjectIds = [id, ...this.recentProjectIds.filter(item => item !== id)].slice(0, 6)
       localStorage.setItem('ca_recent_projects', JSON.stringify(this.recentProjectIds))
     },
-    setEvidenceVisible(value) {
-      this.evidenceVisible = value
-      localStorage.setItem('ca_evidence_visible', JSON.stringify(value))
-    },
     setCompactMode(value) {
       this.compactMode = value
       localStorage.setItem('ca_compact_mode', JSON.stringify(value))
@@ -32,6 +28,19 @@ export const useWorkspaceStore = defineStore('workspace', {
     setTopK(value) {
       this.topK = value
       localStorage.setItem('ca_top_k', JSON.stringify(value))
+    },
+    setConversation(projectId, conversationId) {
+      this.conversationIds = {
+        ...this.conversationIds,
+        [String(projectId)]: conversationId
+      }
+      localStorage.setItem('ca_project_conversations', JSON.stringify(this.conversationIds))
+    },
+    clearConversation(projectId) {
+      const next = { ...this.conversationIds }
+      delete next[String(projectId)]
+      this.conversationIds = next
+      localStorage.setItem('ca_project_conversations', JSON.stringify(next))
     }
   }
 })

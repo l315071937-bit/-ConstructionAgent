@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.v1 import auth, documents, projects, retrieval
+from api.v1 import auth, conversations, documents, projects, retrieval
 from config import settings
 from core.exceptions import AppError
 from core.logger import get_logger
@@ -55,5 +55,6 @@ def health():
 
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(projects.router, prefix=settings.api_prefix)
+app.include_router(conversations.router, prefix=settings.api_prefix)
 app.include_router(documents.router, prefix=settings.api_prefix)
 app.include_router(retrieval.router, prefix=settings.api_prefix)
