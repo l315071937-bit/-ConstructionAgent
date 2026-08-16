@@ -1,0 +1,136 @@
+"""Focused API contract tests with authentication and infrastructure replaced."""
+from types import SimpleNamespace
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
+
+import api.v1.documents as documents_api
+import api.v1.projects as projects_api
+import api.v1.retrieval as retrieval_api
+from core.exceptions import AppError
+from db.session import get_db
+from dependencies import get_current_project, get_current_user
+
+
+def make_app(router):
+    app = FastAPI()
+
+    @app.exception_handler(AppError)
+    async def app_error_handler(request, exc):
+        return JSONResponse(status_code=exc.http_status,
+                            content={"error": {"code": exc.code,
+                                               "message": exc.message}})
+
+    app.dependency_overrides[get_current_project] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=7, tenant_id=1)
+    app.dependency_overrides[get_db] = lambda: SimpleNamespace()
+    app.include_router(router, prefix="/api/v1")
+    return app
+
+
+class TestRetrievalAPI:
+    def test_top_k传入graph_state并返回SSE(self, monkeypatch):
+        received = {}
+
+        class FakeGraph:
+            async def astream(self, state, stream_mode):
+                received.update(state)
+                yield "updates", {"retrieve": {}}
+                yield "values", {"answer": "回答", "evidences": [],
+                                 "confidence": 0.0}
+
+        monkeypatch.setattr(retrieval_api, "build_graph", lambda: FakeGraph())
+        client = TestClient(make_app(retrieval_api.router))
+
+        resp = client.post("/api/v1/projects/1/retrieval/query",
+                           json={"question": "项目采用什么系统？", "top_k": 3})
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        assert received["top_k"] == 3
+        assert "event: done" in resp.text
+
+    def test_top_k越界由请求模型拒绝(self):
+        client = TestClient(make_app(retrieval_api.router))
+        resp = client.post("/api/v1/projects/1/retrieval/query",
+                           json={"question": "问题", "top_k": 21})
+        assert resp.status_code == 422
+
+
+class TestDocumentsAPI:
+    def test_不支持的扩展名立即返回415(self):
+        client = TestClient(make_app(documents_api.router))
+        resp = client.post("/api/v1/projects/1/documents",
+                           files={"file": ("malware.exe", b"data")})
+        assert resp.status_code == 415
+        assert resp.json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
+
+    def test_受保护原文件以内联方式返回(self, tmp_path, monkeypatch):
+        pdf = tmp_path / "sample.pdf"
+        pdf.write_bytes(b"%PDF-test")
+        doc = SimpleNamespace(id="doc-1", project_id=1,
+                              file_name="sample.pdf", file_path=str(pdf))
+        monkeypatch.setattr(documents_api.document_service, "get_document",
+                            lambda db, project_id, document_id: doc)
+        client = TestClient(make_app(documents_api.router))
+
+        resp = client.get("/api/v1/projects/1/documents/doc-1/file")
+
+        assert resp.status_code == 200
+        assert resp.content == b"%PDF-test"
+        assert resp.headers["content-type"].startswith("application/pdf")
+        assert resp.headers["content-disposition"].startswith("inline")
+
+    def test_完整预览PDF以内联方式返回(self, tmp_path, monkeypatch):
+        pdf = tmp_path / "converted.pdf"
+        pdf.write_bytes(b"%PDF-preview")
+        doc = SimpleNamespace(id="doc-1", project_id=1,
+                              file_name="方案.docx", file_path="source.docx")
+        monkeypatch.setattr(documents_api.document_service, "get_document",
+                            lambda db, project_id, document_id: doc)
+        monkeypatch.setattr(documents_api.preview_service,
+                            "get_preview_file_path", lambda path: str(pdf))
+        client = TestClient(make_app(documents_api.router))
+
+        resp = client.get("/api/v1/projects/1/documents/doc-1/preview")
+
+        assert resp.status_code == 200
+        assert resp.content == b"%PDF-preview"
+        assert resp.headers["content-type"].startswith("application/pdf")
+        assert resp.headers["content-disposition"].startswith("inline")
+
+
+class TestProjectsAPI:
+    def test_项目联想只返回服务层允许的项目(self, monkeypatch):
+        received = {}
+        project = SimpleNamespace(id=9, name="深圳市龙华区幼儿园")
+
+        def suggest(db, user_id, query, limit):
+            received.update(user_id=user_id, query=query, limit=limit)
+            return [project]
+
+        monkeypatch.setattr(projects_api.project_service,
+                            "suggest_projects", suggest)
+        monkeypatch.setattr(
+            projects_api.project_service, "project_cards",
+            lambda db, items: [{"project_id": item.id, "name": item.name,
+                                "description": "", "document_count": 12,
+                                "created_at": "2026-08-16T00:00:00Z"}
+                               for item in items])
+        client = TestClient(make_app(projects_api.router))
+
+        resp = client.get("/api/v1/projects/suggestions",
+                          params={"q": "深圳", "limit": 3})
+
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["project_id"] == 9
+        assert received == {"user_id": 7, "query": "深圳", "limit": 3}
+
+    def test_项目联想参数限制(self):
+        client = TestClient(make_app(projects_api.router))
+
+        assert client.get("/api/v1/projects/suggestions?q=深").status_code == 422
+        assert client.get(
+            "/api/v1/projects/suggestions?q=深圳&limit=4").status_code == 422

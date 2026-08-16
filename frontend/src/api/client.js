@@ -3,9 +3,20 @@ import { useAuthStore } from '../stores/auth'
 
 const BASE = '/api/v1'
 
+function apiUrl(path) {
+  return path.startsWith(BASE + '/') ? path : BASE + path
+}
+
+function handleUnauthorized(resp, auth) {
+  if (resp.status === 401) {
+    auth.logout()
+    window.location = '/login'
+  }
+}
+
 async function request(method, path, body) {
   const auth = useAuthStore()
-  const resp = await fetch(BASE + path, {
+  const resp = await fetch(apiUrl(path), {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -15,7 +26,7 @@ async function request(method, path, body) {
   })
   const data = await resp.json().catch(() => ({}))
   if (!resp.ok) {
-    if (resp.status === 401) { auth.logout(); window.location = '/login' }
+    handleUnauthorized(resp, auth)
     throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status))
   }
   return data
@@ -35,8 +46,21 @@ export async function uploadDocument(projectId, file) {
   return data
 }
 
+export async function fetchProtectedBlobUrl(path) {
+  const auth = useAuthStore()
+  const resp = await fetch(apiUrl(path), {
+    headers: auth.token ? { Authorization: 'Bearer ' + auth.token } : {}
+  })
+  if (!resp.ok) {
+    handleUnauthorized(resp, auth)
+    const data = await resp.json().catch(() => ({}))
+    throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status))
+  }
+  return URL.createObjectURL(await resp.blob())
+}
+
 // SSE 流式问答：onEvent(event, data) 回调
-export async function streamQuery(projectId, question, onEvent) {
+export async function streamQuery(projectId, question, onEvent, topK = 8) {
   const auth = useAuthStore()
   const resp = await fetch(BASE + '/projects/' + projectId + '/retrieval/query', {
     method: 'POST',
@@ -44,7 +68,7 @@ export async function streamQuery(projectId, question, onEvent) {
       'Content-Type': 'application/json',
       Authorization: 'Bearer ' + auth.token
     },
-    body: JSON.stringify({ question })
+    body: JSON.stringify({ question, top_k: topK })
   })
   if (!resp.ok || !resp.body) {
     const data = await resp.json().catch(() => ({}))

@@ -1,4 +1,7 @@
 """项目服务：创建/列表/详情（成员关系过滤，03 4）。"""
+import re
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from db.models import Document, Project, ProjectMember
@@ -22,6 +25,53 @@ def list_projects(db: Session, user_id: int) -> list:
             .filter(ProjectMember.user_id == user_id)
             .order_by(Project.created_at.desc()).all())
     return rows
+
+
+def _search_text(value: str) -> str:
+    return re.sub(r"[\W_]+", "", (value or "").casefold())
+
+
+def suggest_projects(db: Session, user_id: int, query: str,
+                     limit: int = 3) -> list:
+    """Rank only projects the user may access; no project name may leak."""
+    keyword = _search_text(query)
+    if not keyword:
+        return []
+
+    ranked = []
+    for project in list_projects(db, user_id):
+        name = _search_text(project.name)
+        description = _search_text(project.description)
+        if name == keyword:
+            score = 1000
+        elif name.startswith(keyword):
+            score = 800
+        elif keyword in name:
+            score = 600
+        elif keyword in description:
+            score = 300
+        else:
+            continue
+        ranked.append((score, project.created_at, project))
+
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [item[2] for item in ranked[:limit]]
+
+
+def project_cards(db: Session, projects: list) -> list[dict]:
+    projects = list(projects)
+    project_ids = [project.id for project in projects]
+    counts = {}
+    if project_ids:
+        rows = (db.query(Document.project_id, func.count(Document.id))
+                .filter(Document.project_id.in_(project_ids))
+                .group_by(Document.project_id).all())
+        counts = dict(rows)
+    return [{"project_id": project.id, "name": project.name,
+             "description": project.description,
+             "document_count": counts.get(project.id, 0),
+             "created_at": project.created_at.isoformat() + "Z"}
+            for project in projects]
 
 
 def project_detail(db: Session, project: Project) -> dict:

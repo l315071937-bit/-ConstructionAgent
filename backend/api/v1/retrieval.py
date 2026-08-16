@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agents.orchestrator import route
 from agents.project_retrieval.graph import build_graph
@@ -33,7 +33,7 @@ STAGE_MESSAGES = {
 class QueryRequest(BaseModel):
     question: str
     conversation_id: str | None = None
-    top_k: int = 8
+    top_k: int = Field(default=8, ge=1, le=20)
 
 
 def _sse(event: str, data: dict) -> str:
@@ -59,7 +59,8 @@ async def query(body: QueryRequest,
                      "user_id": user.id,
                      "tenant_id": user.tenant_id,
                      "project_id": project.id,
-                     "original_query": body.question},
+                     "original_query": body.question,
+                     "top_k": body.top_k},
                     stream_mode=["updates", "values"]):
                 if mode == "updates":
                     for node_name, delta in chunk.items():

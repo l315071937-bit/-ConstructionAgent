@@ -11,10 +11,12 @@ from core.exceptions import AppError
 from core.logger import get_logger
 from services.document_parser.base import ParsedDocument, ParserInterface
 from services.document_parser.pymupdf_parser import PyMuPDFParser
+from services.document_parser.text_parser import TextParser
 
 logger = get_logger("document_parser")
 
 OFFICE_EXTS = {".doc", ".docx", ".xls", ".xlsx"}
+SUPPORTED_EXTS = frozenset({".pdf", ".txt"} | OFFICE_EXTS)
 
 # LibreOffice 单实例约束：并发转换会撞用户配置文件锁，必须串行
 _soffice_lock = threading.Lock()
@@ -23,7 +25,7 @@ _soffice_lock = threading.Lock()
 class DocumentParserRouter:
     def __init__(self):
         self._parsers: dict[str, ParserInterface] = {}
-        for p in [PyMuPDFParser()]:
+        for p in [PyMuPDFParser(), TextParser()]:
             for ext in p.extensions:
                 self._parsers[ext] = p
 

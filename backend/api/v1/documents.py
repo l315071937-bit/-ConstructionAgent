@@ -1,7 +1,10 @@
-"""Documents API（03 5）：上传（异步解析）/列表/详情/删除/页码缩略图。"""
+"""Documents API（03 5）：上传（异步解析）/列表/详情/删除/文件预览。"""
+import mimetypes
+import os
+
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, UploadFile,
                      Query)
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -10,6 +13,7 @@ from db.models import User
 from db.session import SessionLocal, get_db
 from dependencies import get_current_project, get_current_user
 from services import document_service, preview_service
+from services.document_parser.router import SUPPORTED_EXTS
 
 router = APIRouter(prefix="/projects/{project_id}/documents",
                    tags=["documents"])
@@ -23,11 +27,15 @@ async def upload_document(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    file_name = file.filename or "unnamed"
+    ext = os.path.splitext(file_name)[1].lower()
+    if ext not in SUPPORTED_EXTS:
+        raise AppError("UNSUPPORTED_FILE_TYPE",
+                       "不支持的文件类型: {}".format(ext or "无扩展名"), 415)
     content = await file.read()
     if len(content) > settings.max_upload_mb * 1024 * 1024:
         raise AppError("FILE_TOO_LARGE", "文件超过 {}MB 限制".format(
             settings.max_upload_mb), 413)
-    file_name = file.filename or "unnamed"
     file_path = document_service.save_upload(project.id, file_name, content)
     doc = document_service.create_document(
         db, project.id, file_name, file_path, len(content), user.id)
@@ -75,6 +83,33 @@ def delete_document(document_id: str, project=Depends(get_current_project),
     document_service.delete_document(db, d)
 
 
+@router.get("/{document_id}/file")
+def document_file(document_id: str, project=Depends(get_current_project),
+                  db: Session = Depends(get_db)):
+    """Return the original document after the normal project access check."""
+    d = document_service.get_document(db, project.id, document_id)
+    if not os.path.isfile(d.file_path):
+        raise AppError("DOCUMENT_FILE_MISSING", "文档文件不存在", 404)
+    media_type = mimetypes.guess_type(d.file_name)[0] or "application/octet-stream"
+    return FileResponse(d.file_path, media_type=media_type, filename=d.file_name,
+                        content_disposition_type="inline")
+
+
+@router.get("/{document_id}/preview")
+def document_preview(document_id: str, project=Depends(get_current_project),
+                     db: Session = Depends(get_db)):
+    """Return the complete PDF representation used by Evidence previews."""
+    d = document_service.get_document(db, project.id, document_id)
+    try:
+        preview_path = preview_service.get_preview_file_path(d.file_path)
+    except FileNotFoundError:
+        raise AppError("PREVIEW_UNAVAILABLE", "当前文档暂不支持完整预览", 422)
+    preview_name = os.path.splitext(d.file_name)[0] + ".pdf"
+    return FileResponse(preview_path, media_type="application/pdf",
+                        filename=preview_name,
+                        content_disposition_type="inline")
+
+
 @router.get("/{document_id}/pages/{page}/image")
 def page_image(document_id: str, page: int,
                width: int = Query(default=400, ge=100, le=1200),
@@ -85,4 +120,6 @@ def page_image(document_id: str, page: int,
         img = preview_service.render_page(d.file_path, page, width)
     except ValueError:
         raise AppError("VALIDATION_ERROR", "页码超出范围", 422)
+    except (FileNotFoundError, RuntimeError):
+        raise AppError("PREVIEW_UNAVAILABLE", "当前文档暂不支持页面预览", 422)
     return Response(content=img, media_type="image/jpeg")

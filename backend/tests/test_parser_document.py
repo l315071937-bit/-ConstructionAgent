@@ -9,8 +9,10 @@ from unittest.mock import MagicMock
 import pytest
 
 import services.document_service as doc_service
+import services.preview_service as preview_service
 from core.exceptions import NotFoundError
 from services.document_parser.pymupdf_parser import PyMuPDFParser
+from services.document_parser.text_parser import TextParser
 
 
 # ============ PyMuPDFParser：真实 PDF 解析链路 ============
@@ -35,6 +37,38 @@ class TestPyMuPDFParser:
         assert parsed.pages[0].page_no == 1
         assert "TN-S system" in parsed.pages[0].text
         assert parsed.pages[1].char_count == 0
+
+
+class TestTextParser:
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "gb18030"])
+    def test_常用编码文本可解析(self, tmp_path, encoding):
+        txt_path = tmp_path / "说明.txt"
+        txt_path.write_bytes("配电箱安装要求".encode(encoding))
+
+        parsed = TextParser().parse(str(txt_path))
+
+        assert parsed.meta["total_pages"] == 1
+        assert parsed.pages[0].page_no == 1
+        assert parsed.pages[0].text == "配电箱安装要求"
+
+
+class TestPreviewFile:
+    def test_Office原文件解析到转换后的完整PDF(self, tmp_path):
+        source = tmp_path / "document.docx"
+        source.write_bytes(b"office")
+        converted_dir = tmp_path / "converted"
+        converted_dir.mkdir()
+        converted = converted_dir / "document.pdf"
+        converted.write_bytes(b"%PDF-preview")
+
+        resolved = preview_service.get_preview_file_path(str(source))
+
+        assert resolved == str(converted)
+
+    def test_PDF直接作为完整预览文件(self, tmp_path):
+        source = tmp_path / "document.pdf"
+        source.write_bytes(b"%PDF-source")
+        assert preview_service.get_preview_file_path(str(source)) == str(source)
 
 
 # ============ save_upload：上传落盘 ============

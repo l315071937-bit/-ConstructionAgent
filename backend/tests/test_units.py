@@ -4,8 +4,12 @@
 运行方式（在 backend 目录下）：
     ../.venv/Scripts/python -m pytest tests -v
 """
+from types import SimpleNamespace
+
 import pytest
 
+import agents.project_retrieval.nodes as retrieval_nodes
+from services import project_service
 from core.exceptions import AppError
 from services.retrieval.base import RetrievedChunk
 from services.retrieval.reranker import rerank
@@ -104,6 +108,39 @@ class TestValidateInput:
         out = validate_input({"original_query": "电气方案", "project_id": 1})
         assert out == {"fallback_level": 0}
 
+    @pytest.mark.parametrize("top_k", [0, 21, "8"])
+    def test_top_k越界或类型错误抛422(self, top_k):
+        with pytest.raises(AppError) as exc:
+            validate_input({"original_query": "电气方案", "project_id": 1,
+                            "top_k": top_k})
+        assert exc.value.http_status == 422
+
+
+class TestRetrieve:
+    def test_top_k控制最终证据数量(self, monkeypatch):
+        chunks = [make_chunk(str(i), 1 - i / 10) for i in range(5)]
+        calls = []
+
+        class DenseStub:
+            def retrieve(self, query, project_id, top_k):
+                calls.append(top_k)
+                return chunks
+
+        class LexicalStub:
+            def retrieve(self, query, project_id, top_k):
+                calls.append(top_k)
+                return []
+
+        monkeypatch.setattr(retrieval_nodes, "DenseRetriever", DenseStub)
+        monkeypatch.setattr(retrieval_nodes, "LexicalRetriever", LexicalStub)
+
+        out = retrieval_nodes.retrieve({"original_query": "配电箱",
+                                        "project_id": 1, "top_k": 3})
+
+        assert len(out["evidences_raw"]) == 3
+        assert out["retrieval_candidate_count"] == 5
+        assert calls == [20, 20]
+
 
 # ======== validate_answer：硬事实校验（回答中的数字必须来自证据） ========
 
@@ -138,3 +175,36 @@ class TestFallback:
         assert out["confidence"] == 0.0
         assert out["retrieval_status"] == "EMPTY"
         assert len(out["answer"]) > 0
+
+
+class TestProjectSuggestions:
+    def test_名称前缀优先且自动清理标点(self, monkeypatch):
+        projects = [
+            SimpleNamespace(id=1, name="福建省学校项目", description="",
+                            created_at=1),
+            SimpleNamespace(id=2, name="深圳市龙华区幼儿园", description="公建项目",
+                            created_at=2),
+            SimpleNamespace(id=3, name="龙华设计资料", description="深圳市项目",
+                            created_at=3),
+        ]
+        monkeypatch.setattr(project_service, "list_projects",
+                            lambda db, user_id: projects)
+
+        result = project_service.suggest_projects(
+            None, 7, "深圳市龙华...", limit=3)
+
+        assert [project.id for project in result] == [2]
+
+    def test_名称匹配排在描述匹配之前(self, monkeypatch):
+        projects = [
+            SimpleNamespace(id=1, name="龙华区医院项目", description="",
+                            created_at=1),
+            SimpleNamespace(id=2, name="人民医院项目", description="位于龙华区",
+                            created_at=2),
+        ]
+        monkeypatch.setattr(project_service, "list_projects",
+                            lambda db, user_id: projects)
+
+        result = project_service.suggest_projects(None, 7, "龙华", limit=3)
+
+        assert [project.id for project in result] == [1, 2]

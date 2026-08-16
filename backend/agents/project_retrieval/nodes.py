@@ -21,6 +21,9 @@ def validate_input(state: dict) -> dict:
         raise AppError("VALIDATION_ERROR", "问题不能为空", 422)
     if not state.get("project_id"):
         raise AppError("VALIDATION_ERROR", "缺少 project_id", 422)
+    top_k = state.get("top_k", 8)
+    if not isinstance(top_k, int) or not 1 <= top_k <= 20:
+        raise AppError("VALIDATION_ERROR", "top_k 必须在 1 到 20 之间", 422)
     return {"fallback_level": 0}
 
 
@@ -32,15 +35,18 @@ def retrieve(state: dict) -> dict:
     # Dense + Lexical（占位）合并召回；词法未实现时 Dense 独跑（01 28 降级）
     query = state["original_query"]
     project_id = state["project_id"]
+    top_k = state.get("top_k", 8)
+    candidate_k = max(20, top_k)
     try:
-        dense = DenseRetriever().retrieve(query, project_id, top_k=20)
+        dense = DenseRetriever().retrieve(query, project_id, top_k=candidate_k)
     except Exception as e:
         logger.error("dense retrieve failed: %s", e)
         raise AppError("RETRIEVAL_FAILED", "项目资料检索失败，请稍后重试", 500)
-    lexical = LexicalRetriever().retrieve(query, project_id, top_k=20)
+    lexical = LexicalRetriever().retrieve(query, project_id, top_k=candidate_k)
     merged = {c.chunk_id: c for c in dense + lexical}
-    top = rerank(query, list(merged.values()), top_k=8)
+    top = rerank(query, list(merged.values()), top_k=top_k)
     return {"evidences_raw": top,
+            "retrieval_candidate_count": len(merged),
             "retrieval_status": "OK" if top else "EMPTY"}
 
 
@@ -60,7 +66,8 @@ def check_confidence(state: dict) -> dict:
     evs = state.get("evidences") or []
     top = evs[0]["score"] if evs else 0.0
     thr = settings.retrieval_confidence_threshold
-    high = top >= thr and len(evs) >= 2
+    candidate_count = state.get("retrieval_candidate_count", len(evs))
+    high = top >= thr and candidate_count >= 2
     return {"confidence": 1.0 if high else 0.2,
             "human_required": False, "fallback_needed": not high}
 

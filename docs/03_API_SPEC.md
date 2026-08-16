@@ -37,10 +37,12 @@ Milvus 检索必须强制携带 project_id 过滤（服务层注入，不接受�
 | PERMISSION_DENIED | 403 | 无项目权限 |
 | PROJECT_NOT_FOUND | 404 | 项目不存在 |
 | DOCUMENT_NOT_FOUND | 404 | 文档不存在 |
+| DOCUMENT_FILE_MISSING | 404 | 文档记录存在但原始文件缺失 |
 | VALIDATION_ERROR | 422 | 参数校验失败 |
 | FILE_TOO_LARGE | 413 | 超过大小限制（50MB） |
 | UNSUPPORTED_FILE_TYPE | 415 | 文件类型不支持 |
 | PARSE_FAILED | 422 | 文档解析失败（携带 reason） |
+| PREVIEW_UNAVAILABLE | 422 | 当前文档无法生成页面预览 |
 | RETRIEVAL_FAILED | 500 | 检索异常（已走降级仍失败） |
 | LLM_FAILED | 500 | LLM 调用失败（已重试） |
 | INTERNAL_ERROR | 500 | 未知错误 |
@@ -88,6 +90,27 @@ Response: 201 {"project_id": ..., "name": ..., "description": ..., "tenant_id": 
 Response: 200 {"items": [project...], "total": n, "page": 1, "page_size": 20}
 ```
 - 只返回当前用户有成员关系的项目（tenant 内）
+
+## GET /api/v1/projects/suggestions
+
+按项目名称或描述联想当前用户有权限访问的项目。`q` 至少 2 个字符，
+`limit` 范围为 1～3，默认返回前三项。项目名称匹配优先于描述匹配。
+
+```json
+{
+  "items": [
+    {
+      "project_id": 12,
+      "name": "深圳市龙华区某幼儿园",
+      "description": "公建学校项目",
+      "document_count": 26,
+      "created_at": "2026-08-16T00:00:00Z"
+    }
+  ]
+}
+```
+
+用户必须点击联想结果后，前端才可锁定该项目的 `project_id`；禁止仅凭输入文本自动切换知识库。
 
 ## GET /api/v1/projects/{project_id}
 
@@ -142,6 +165,26 @@ Response: 200
 Response: 204
 ```
 - 同步删除存储文件 + Milvus 中该 document_id 的向量（V0.1 允许软删除标记 + 异步清理）
+
+## GET /api/v1/projects/{project_id}/documents/{document_id}/file
+
+```
+Response: 200 原始文件内容（Content-Disposition: inline）
+```
+
+- 经过 JWT 和项目成员权限校验；前端使用带 Bearer Token 的 fetch 获取 Blob URL
+- PDF 可通过 Blob URL 的 `#page=N` 定位到 Evidence 页码
+- Office 文档保留原文件下载；页面预览使用解析阶段转换出的 PDF
+
+## GET /api/v1/projects/{project_id}/documents/{document_id}/preview
+
+```
+Response: 200 application/pdf（Content-Disposition: inline）
+```
+
+- 返回 Evidence 使用的完整可翻页 PDF：原 PDF 直接返回，Office 返回解析阶段转换出的 PDF
+- 前端通过带 Bearer Token 的 fetch 获取 Blob URL，并附加 `#page=N` 定位 Evidence 页码
+- 点击右侧证据缩略图时在新标签页打开，用户可向前后翻页查看完整上下文
 
 ## GET /api/v1/projects/{project_id}/documents/{document_id}/pages/{page}/image
 
