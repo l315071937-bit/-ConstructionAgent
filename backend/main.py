@@ -2,8 +2,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.v1 import (assistant, auth, conversations, documents, folders,
-                    projects, retrieval, standard_query, standards)
+from api.v1 import (assistant, auth, conversations, documents,
+                    enterprise_plans, folders, plans, projects, retrieval,
+                    standard_query, standards)
 from config import settings
 from core.exceptions import AppError
 from core.logger import get_logger
@@ -49,6 +50,10 @@ async def startup():
         ensure_standard_collection()
     except Exception as e:
         logger.warning("milvus not ready at startup: %s", e)
+    from services.plan_task_service import recover_incomplete_tasks
+    recovered = recover_incomplete_tasks()
+    if recovered:
+        logger.info("resuming %s incomplete plan tasks", recovered)
 
 
 @app.get("/health")
@@ -65,3 +70,5 @@ app.include_router(folders.router, prefix=settings.api_prefix)
 app.include_router(standards.router, prefix=settings.api_prefix)
 app.include_router(standard_query.router, prefix=settings.api_prefix)
 app.include_router(retrieval.router, prefix=settings.api_prefix)
+app.include_router(enterprise_plans.router, prefix=settings.api_prefix)
+app.include_router(plans.router, prefix=settings.api_prefix)

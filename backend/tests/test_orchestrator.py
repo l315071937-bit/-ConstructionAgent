@@ -1,12 +1,9 @@
 """agents.orchestrator 意图分类与路由的单元测试。
 
 业务规则（2026-08-16 保守路由原则）：拿不准就走 project 检索，
-只有明确的方案编制类 / 规范查询类才路由到对应 Agent（V0.1 返回 501）。
+只有明确的方案编制类 / 规范查询类才路由到对应 Agent。
 """
-import pytest
-
 from agents.orchestrator import classify_intent, route
-from core.exceptions import AppError
 
 
 class TestClassifyIntent:
@@ -35,12 +32,8 @@ class TestRoute:
     def test_project意图正常放行(self):
         assert route("临时用电怎么配电") == "project"
 
-    def test_plan意图_501明确拒绝(self):
-        with pytest.raises(AppError) as exc:
-            route("帮我编制地下室防水施工方案")
-        assert exc.value.http_status == 501
-        assert exc.value.code == "NOT_IMPLEMENTED_V0_1"
+    def test_plan意图路由到方案Agent(self):
+        assert route("帮我编制地下室防水施工方案") == "plan"
 
-    def test_standard意图_501明确拒绝(self):
-        with pytest.raises(AppError):
-            route("JGJ46-2005 有什么要求")
+    def test_standard意图路由到规范Agent(self):
+        assert route("JGJ46-2005 有什么要求") == "standard"

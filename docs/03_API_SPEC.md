@@ -4,7 +4,7 @@
 > Version: V0.1
 > Status: 第一条垂直主链路 API 冻结（骨架开发基准）
 > 覆盖范围：auth / projects / documents / retrieval（SSE）
-> 已覆盖：standards 文档入库、预览与 SSE 查询；后续增量补齐 plans / tasks / HITL resume
+> 已覆盖：standards 文档入库、预览与 SSE 查询；plans / tasks / HITL resume / DOCX、PDF 输出
 > 依据：01 §52 冻结决策表（2026-08-15 定稿）
 
 ---
@@ -276,11 +276,92 @@ POST /api/v1/projects/{project_id}/conversations/{conversation_id}/memories
 
 ---
 
-# 7. 内部实现约定（非接口契约，开发基准）
+# 7. Construction Plans（异步 Task + HITL）
+
+## POST /api/v1/projects/{project_id}/plans
+
+```json
+{
+  "request": "编制地下室防水施工方案"
+}
+```
+
+返回 `202` 和持久化任务。任务在后台运行，先进入企业模板确认：
+
+```json
+{
+  "task_id": "plan_xxx",
+  "status": "PENDING",
+  "current_stage": "queued",
+  "progress": 0
+}
+```
+
+## GET /api/v1/projects/{project_id}/tasks
+
+返回当前用户在当前项目内的方案任务；不得跨用户、租户或项目读取。
+
+## GET /api/v1/projects/{project_id}/tasks/{task_id}
+
+返回任务状态、当前阶段、进度、人工确认载荷、Evidence、四类检查结果、风险、
+最终内容和下载地址。状态包括：
 
 ```
-1. 路由：规则回答 → 项目预测 → Orchestrator 意图分类；PROJECT 与 STANDARD
-   已实现，PLAN 返回建设中提示，不在 API 层暴露内部节点名
+PENDING | RUNNING | WAITING_HUMAN | COMPLETED | FAILED | CANCELLED
+```
+
+## GET /api/v1/projects/{project_id}/tasks/{task_id}/events
+
+SSE 推送 `stage / human_required / task_completed / error`。流在任务进入人工确认或
+终态时结束，恢复任务后重新连接。
+
+## POST /api/v1/projects/{project_id}/tasks/{task_id}/resume
+
+任务必须处于 `WAITING_HUMAN`。决策统一结构：
+
+```json
+{
+  "action": "select_template | use_generic | confirm | approve | return_modify | cancel",
+  "template_id": "可选",
+  "outline": ["可选，确认或修改后的目录"],
+  "comment": "可选，终审退回意见"
+}
+```
+
+HITL 节点：企业模板/无模板授权、方案目录、终审；工程参数冲突以终审风险项呈现。
+LangGraph checkpoint 与任务状态均持久化到 PostgreSQL，后端重启后可恢复。
+
+## Enterprise Plan Documents
+
+```
+POST /api/v1/enterprise/plan-documents   # 仅管理员
+GET  /api/v1/enterprise/plan-documents
+GET  /api/v1/enterprise/plan-documents/{document_id}
+```
+
+`document_type` 为 `template` 或 `reference_plan`。历史方案只能参考结构和措辞，
+不得沿用其中工程参数。
+
+## Generated Documents
+
+```
+GET /api/v1/projects/{project_id}/plans/documents/{document_id}/docx
+GET /api/v1/projects/{project_id}/plans/documents/{document_id}/pdf
+```
+
+仅终审通过后生成，下载仍经过 JWT 和项目成员权限校验。
+
+方案正式依据规则：仅项目 Evidence 可提供工程事实；仅 `active` 且非测试/示例来源的
+规范 Evidence 可作为正式规范依据。状态未知、废止、被替代、测试和样例规范全部排除并
+写入人工审核提示。
+
+---
+
+# 8. 内部实现约定（非接口契约，开发基准）
+
+```
+1. 路由：规则回答 → 项目预测 → Orchestrator 意图分类；PROJECT、STANDARD
+   和 PLAN 均已实现，不在 API 层暴露内部节点名
 2. 检索管线（V0.1）：
    DenseRetriever(BGE-M3) + LexicalRetriever(接口占位，返回空) → merge
    → Reranker 占位（按 dense score 排序）→ TopK → Evidence 组装
@@ -293,19 +374,15 @@ POST /api/v1/projects/{project_id}/conversations/{conversation_id}/memories
 
 ---
 
-# 8. 占位模块（后续版本增量补齐，不在本版冻结）
+# 9. 占位模块（后续版本增量补齐，不在本版冻结）
 
 | 模块 | 说明 |
 | --- | --- |
-| standards/documents | 规范文件入库、列表、原文件、预览、页面缩略图；按 tenant 隔离 |
-| projects/{project_id}/standards/query | 规范查询 Agent SSE；地区、版本、状态、适用性检查后返回 Standard Evidence |
-| plans/create + resume | 施工方案 Agent + HITL；长任务 Task 化 + checkpoint resume（01 §39/40） |
-| tasks/* | Task 状态查询/恢复/事件；仅 Plan 长任务使用 |
 | 文件预览高级特性 | bbox 页面内高亮、多页缩略图网格（V1.1） |
 
 ---
 
-# 9. 前端最小页面约定（V0.1）
+# 10. 前端最小页面约定（V0.1）
 
 ```
 1. 登录页：用户名/密码 → 存储 token
@@ -315,12 +392,13 @@ POST /api/v1/projects/{project_id}/conversations/{conversation_id}/memories
    ├─ 右侧：Evidence 栏（缩略图 + 文件名 + 页码；点击打开 PDF 并定位页码）
    └─ 底部：输入框 + 发送
 4. 文件上传：项目内上传入口 + 解析状态轮询（PENDING/PARSING/READY/FAILED）
-5. 不包含（V0.1）：方案编制界面、任务中心、拖拽式编辑器
+5. 方案编制：沿用三栏工作台；模板、目录和终审使用对话内确认，不新增独立任务中心
+6. 不包含（V0.1）：拖拽式方案编辑器
 ```
 
 ---
 
-# 10. V0.1 验收清单（对应 00 §35 的先行子集）
+# 11. V0.1 验收清单（对应 00 §35 的先行子集）
 
 ```
 [ ] 登录 / 登出 / token 过期处理
@@ -330,4 +408,6 @@ POST /api/v1/projects/{project_id}/conversations/{conversation_id}/memories
 [ ] Evidence 栏展示缩略图 + 页码 → 点击打开 PDF 定位
 [ ] 检索不到时返回「未找到足够证据 + 推荐文件」，不编造
 [ ] 非项目成员访问接口 → 403
+[ ] 方案任务 → 模板确认 → 目录确认 → 四类检查 → 终审 → DOCX/PDF
+[ ] 测试、示例及非现行规范不进入方案正式依据
 ```

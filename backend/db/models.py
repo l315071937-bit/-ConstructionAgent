@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer,
-                        String, Text, UniqueConstraint)
+                        LargeBinary, String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.session import Base
@@ -190,3 +190,106 @@ class LongTermMemory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_now, onupdate=_now)
+
+
+class EnterprisePlanDocument(Base):
+    """Tenant-owned plan template or approved historical reference plan."""
+    __tablename__ = "enterprise_plan_documents"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), index=True)
+    document_type: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(256))
+    task_type: Mapped[str] = mapped_column(String(64), default="general")
+    discipline: Mapped[str] = mapped_column(String(64), default="")
+    version: Mapped[str] = mapped_column(String(64), default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    outline_json: Mapped[list] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now)
+
+
+class PlanTask(Base):
+    """Durable user-facing state for a Construction Plan workflow."""
+    __tablename__ = "plan_tasks"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True)
+    request: Mapped[str] = mapped_column(Text)
+    task_type: Mapped[str] = mapped_column(String(64), default="general")
+    status: Mapped[str] = mapped_column(String(24), default="PENDING")
+    current_stage: Mapped[str] = mapped_column(String(64), default="queued")
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    state_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    human_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    human_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True)
+    human_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now)
+
+
+class GeneratedPlanDocument(Base):
+    __tablename__ = "generated_plan_documents"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), index=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True)
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("plan_tasks.id"), unique=True, index=True)
+    file_name: Mapped[str] = mapped_column(String(256))
+    docx_path: Mapped[str] = mapped_column(String(512))
+    pdf_path: Mapped[str] = mapped_column(String(512))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class LangGraphCheckpoint(Base):
+    """SQL-backed LangGraph checkpoint metadata and channel-version index."""
+    __tablename__ = "langgraph_checkpoints"
+    thread_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    checkpoint_ns: Mapped[str] = mapped_column(
+        String(128), primary_key=True, default="")
+    checkpoint_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    parent_checkpoint_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True)
+    checkpoint_type: Mapped[str] = mapped_column(String(32))
+    checkpoint_data: Mapped[bytes] = mapped_column(LargeBinary)
+    metadata_type: Mapped[str] = mapped_column(String(32))
+    metadata_data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class LangGraphCheckpointBlob(Base):
+    __tablename__ = "langgraph_checkpoint_blobs"
+    thread_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    checkpoint_ns: Mapped[str] = mapped_column(
+        String(128), primary_key=True, default="")
+    channel: Mapped[str] = mapped_column(String(256), primary_key=True)
+    version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value_type: Mapped[str] = mapped_column(String(32))
+    value_data: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class LangGraphCheckpointWrite(Base):
+    __tablename__ = "langgraph_checkpoint_writes"
+    thread_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    checkpoint_ns: Mapped[str] = mapped_column(
+        String(128), primary_key=True, default="")
+    checkpoint_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    write_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel: Mapped[str] = mapped_column(String(256))
+    value_type: Mapped[str] = mapped_column(String(32))
+    value_data: Mapped[bytes] = mapped_column(LargeBinary)
+    task_path: Mapped[str] = mapped_column(String(512), default="")

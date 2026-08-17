@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from agents.orchestrator import route
+from core.exceptions import AppError
 from agents.project_retrieval.graph import build_graph
 from core.logger import get_logger
 from db.models import User
@@ -49,7 +50,13 @@ async def query(body: QueryRequest,
                 project=Depends(get_current_project),
                 user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    route(body.question)  # V0.1 仅 project 意图；standard/plan → 501
+    intent = route(body.question)
+    if intent != "project":
+        raise AppError(
+            "AGENT_ROUTE_REQUIRED",
+            "该请求应由{}处理".format(
+                "规范查询 Agent" if intent == "standard" else "施工方案 Agent"),
+            409)
 
     request_id = "req_" + uuid.uuid4().hex[:12]
     conversation = conversation_service.get_or_create_conversation(

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     storage_dir: str = str(BASE_DIR / "storage")
     standard_storage_dir: str = str(BASE_DIR / "storage" / "standards")
+    plan_storage_dir: str = str(BASE_DIR / "storage" / "plans")
     max_upload_mb: int = 50
 
     # Embedding（默认实现档，01 52.3：接口冻结、实现可换）

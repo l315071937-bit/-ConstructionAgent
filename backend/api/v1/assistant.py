@@ -13,7 +13,8 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 class InputRouteRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
-    active_agent: str = Field(default="project", pattern="^(project|standard)$")
+    active_agent: str = Field(
+        default="project", pattern="^(project|standard|plan)$")
 
 
 @router.post("/route")

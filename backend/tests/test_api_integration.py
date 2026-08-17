@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import api.v1.documents as documents_api
 import api.v1.assistant as assistant_api
 import api.v1.folders as folders_api
+import api.v1.plans as plans_api
 import api.v1.projects as projects_api
 import api.v1.retrieval as retrieval_api
 import api.v1.standard_query as standard_query_api
@@ -215,6 +216,47 @@ class TestAssistantAPI:
         assert resp.json()["type"] == "RULE_REPLY"
         assert received == {"user_id": 7, "query": "你好",
                             "active_agent": "project"}
+
+
+class TestPlansAPI:
+    def test_创建方案任务使用当前项目和用户并进入后台(self, monkeypatch):
+        received = {}
+        task = SimpleNamespace(id="plan-1")
+
+        def create(db, tenant_id, user_id, project_id, request):
+            received.update(tenant_id=tenant_id, user_id=user_id,
+                            project_id=project_id, request=request)
+            return task
+
+        monkeypatch.setattr(plans_api.plan_task_service, "create", create)
+        monkeypatch.setattr(plans_api.plan_task_service, "run_task",
+                            lambda task_id: received.update(ran=task_id))
+        monkeypatch.setattr(plans_api.plan_task_service, "serialize",
+                            lambda item: {"task_id": item.id,
+                                          "status": "PENDING"})
+        client = TestClient(make_app(plans_api.router))
+
+        response = client.post("/api/v1/projects/1/plans", json={
+            "request": "编制地下室防水施工方案"})
+
+        assert response.status_code == 202
+        assert response.json()["task_id"] == "plan-1"
+        assert received == {
+            "tenant_id": 1, "user_id": 7, "project_id": 1,
+            "request": "编制地下室防水施工方案", "ran": "plan-1"}
+
+    def test_非等待状态任务拒绝恢复(self, monkeypatch):
+        monkeypatch.setattr(
+            plans_api.plan_task_service, "get",
+            lambda *args: SimpleNamespace(status="RUNNING"))
+        client = TestClient(make_app(plans_api.router))
+
+        response = client.post(
+            "/api/v1/projects/1/tasks/plan-1/resume",
+            json={"action": "confirm", "outline": ["工程概况"]})
+
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "PLAN_TASK_NOT_WAITING"
 
 
 class TestStandardsAPI:

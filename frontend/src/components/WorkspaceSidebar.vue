@@ -19,12 +19,12 @@
         <span>规范查询</span>
         <span class="status-dot"></span>
       </button>
-      <el-tooltip content="施工方案 Agent 尚未开放" placement="right">
-        <button class="nav-item disabled" type="button" disabled>
-          <el-icon><EditPen /></el-icon>
-          <span>施工方案编制</span>
-        </button>
-      </el-tooltip>
+      <button class="nav-item" :class="{ active: activeAgent === 'plan' }" type="button"
+              @click="$emit('select-agent', 'plan')">
+        <el-icon><EditPen /></el-icon>
+        <span>施工方案编制</span>
+        <span class="status-dot"></span>
+      </button>
     </section>
 
     <section class="nav-section project-section">

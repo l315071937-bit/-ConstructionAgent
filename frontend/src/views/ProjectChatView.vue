@@ -69,6 +69,14 @@
                     </button>
                   </div>
                   <div v-if="message.fallback" class="fallback">未找到足够证据，建议人工核对项目资料。</div>
+                  <div v-if="message.planDownloads" class="plan-downloads">
+                    <el-button type="primary" plain @click="openPlanDocument(message.planDownloads.docx)">
+                      <el-icon><Download /></el-icon>下载 DOCX
+                    </el-button>
+                    <el-button @click="openPlanDocument(message.planDownloads.pdf)">
+                      <el-icon><Download /></el-icon>查看 PDF
+                    </el-button>
+                  </div>
                 </template>
                 <template v-else>{{ message.content }}</template>
               </div>
@@ -273,13 +281,66 @@
         <el-button type="primary" :loading="standardUploading" @click="submitStandardUpload">上传并解析</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="planDecisionOpen" :title="planDecisionTitle" width="min(720px, 94vw)"
+               :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false">
+      <template v-if="planTask && ['TEMPLATE_SELECTION', 'GENERIC_TEMPLATE_PERMISSION'].includes(planTask.human_reason)">
+        <p class="decision-message">{{ planTask.human_payload.message }}</p>
+        <el-radio-group v-if="planTask.human_payload.templates && planTask.human_payload.templates.length"
+                        v-model="selectedTemplateId" class="template-options">
+          <el-radio v-for="template in planTask.human_payload.templates" :key="template.document_id"
+                    :value="template.document_id" border>
+            {{ template.name }}{{ template.version ? ' · ' + template.version : '' }}
+          </el-radio>
+          <el-radio value="__generic__" border>不使用模板，生成通用结构</el-radio>
+        </el-radio-group>
+      </template>
+
+      <template v-else-if="planTask && planTask.human_reason === 'OUTLINE_CONFIRMATION'">
+        <p class="decision-message">{{ planTask.human_payload.message }}</p>
+        <div class="outline-editor">
+          <div v-for="(item, index) in planOutline" :key="index" class="outline-row">
+            <span>{{ index + 1 }}</span>
+            <el-input v-model="planOutline[index]" maxlength="128" />
+            <el-button circle text title="删除章节" @click="planOutline.splice(index, 1)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
+          <el-button text type="primary" :disabled="planOutline.length >= 15"
+                     @click="planOutline.push('')"><el-icon><Plus /></el-icon>增加章节</el-button>
+        </div>
+      </template>
+
+      <template v-else-if="planTask && planTask.human_reason === 'FINAL_REVIEW'">
+        <el-alert :type="planTask.high_risk ? 'error' : 'warning'" :closable="false"
+                  :title="planTask.human_payload.message" show-icon />
+        <div v-if="planTask.warnings.length" class="review-warnings">
+          <strong>人工审核项</strong>
+          <ul><li v-for="item in planTask.warnings" :key="item">{{ item }}</li></ul>
+        </div>
+        <el-input v-model="planComment" type="textarea" :rows="3" maxlength="1000"
+                  placeholder="退回修改时填写具体意见" />
+        <details class="plan-preview">
+          <summary>查看方案草案</summary>
+          <pre>{{ planTask.final_content }}</pre>
+        </details>
+      </template>
+
+      <template #footer>
+        <el-button :loading="planDecisionLoading" @click="submitPlanDecision('cancel')">取消任务</el-button>
+        <el-button v-if="planTask && planTask.human_reason === 'FINAL_REVIEW'"
+                   :loading="planDecisionLoading" @click="submitPlanDecision('return_modify')">退回修改</el-button>
+        <el-button type="primary" :loading="planDecisionLoading" :disabled="!canSubmitPlanDecision"
+                   @click="submitPlanDecision(primaryPlanDecision)">{{ primaryPlanDecisionLabel }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, EditPen, Folder, Lock, Position, Reading, Search } from '@element-plus/icons-vue'
+import { ArrowRight, Delete, Download, EditPen, Folder, Lock, Plus, Position, Reading, Search } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import EvidencePanel from '../components/EvidencePanel.vue'
 import ProjectQuickSearch from '../components/ProjectQuickSearch.vue'
@@ -330,6 +391,8 @@ let evidenceLoadVersion = 0
 let previewBlobUrl = ''
 let previewLoadVersion = 0
 let documentPollTimer = 0
+let planPollTimer = 0
+let planAnswerMessage = null
 const standardDisciplines = ['建筑', '结构', '给排水', '电气', '暖通', '消防', '市政', '园林']
 const standardTypes = ['国家标准', '行业标准', '地方标准', '标准图集', '企业规范', '项目指定规范']
 
@@ -346,12 +409,13 @@ const libraryDocuments = computed(() => activeAgent.value === 'standard'
 const readyDocumentCount = computed(() => libraryDocuments.value.filter(
   doc => doc.parse_status === 'READY').length)
 const activeAgentLabel = computed(() => activeAgent.value === 'standard'
-  ? '工程规范查询' : '项目资料检索')
+  ? '工程规范查询' : activeAgent.value === 'plan' ? '施工方案编制' : '项目资料检索')
 const conversationHeading = computed(() => activeAgent.value === 'standard'
-  ? '工程规范查询' : (currentProject.value ? currentProject.value.name : '项目工作台'))
+  ? '工程规范查询' : activeAgent.value === 'plan' ? '施工方案任务' :
+    (currentProject.value ? currentProject.value.name : '项目工作台'))
 const composerPlaceholder = computed(() => activeAgent.value === 'standard'
   ? '查询规范编号、条款、地区适用性或有效状态'
-  : '向当前项目知识库提问')
+  : activeAgent.value === 'plan' ? '例如：编制地下室防水施工方案' : '向当前项目知识库提问')
 const libraryContext = computed(() => activeAgent.value === 'standard'
   ? { name: '企业规范知识库' } : currentProject.value)
 const sessionTitle = computed(() => {
@@ -362,6 +426,37 @@ const matchedProjects = computed(() => {
   const keyword = projectQuery.value.trim().toLowerCase()
   return projects.value.filter(project => !keyword || project.name.toLowerCase().includes(keyword))
 })
+const planTask = ref(null)
+const planDecisionOpen = ref(false)
+const planDecisionLoading = ref(false)
+const selectedTemplateId = ref('')
+const planOutline = ref([])
+const planComment = ref('')
+const planDecisionTitle = computed(() => {
+  if (!planTask.value) return '方案人工确认'
+  if (planTask.value.human_reason === 'OUTLINE_CONFIRMATION') return '确认方案目录'
+  if (planTask.value.human_reason === 'FINAL_REVIEW') return '施工方案最终审核'
+  return '确认企业模板'
+})
+const primaryPlanDecision = computed(() => {
+  if (!planTask.value) return ''
+  if (planTask.value.human_reason === 'OUTLINE_CONFIRMATION') return 'confirm'
+  if (planTask.value.human_reason === 'FINAL_REVIEW') return 'approve'
+  return selectedTemplateId.value && selectedTemplateId.value !== '__generic__'
+    ? 'select_template' : 'use_generic'
+})
+const primaryPlanDecisionLabel = computed(() => {
+  if (primaryPlanDecision.value === 'confirm') return '确认目录并生成'
+  if (primaryPlanDecision.value === 'approve') return '审核通过并生成文档'
+  return primaryPlanDecision.value === 'select_template' ? '使用所选模板' : '使用通用结构'
+})
+const canSubmitPlanDecision = computed(() => {
+  if (!planTask.value) return false
+  if (planTask.value.human_reason === 'OUTLINE_CONFIRMATION') {
+    return planOutline.value.length > 0 && planOutline.value.every(item => item.trim())
+  }
+  return planTask.value.human_reason !== 'TEMPLATE_SELECTION' || Boolean(selectedTemplateId.value)
+})
 
 function createWelcomeMessage() {
   if (activeAgent.value === 'standard') {
@@ -370,13 +465,19 @@ function createWelcomeMessage() {
       content: '已进入工程规范查询。请告诉我规范编号、工程地区、专业或需要核对的具体做法。'
     }
   }
+  if (activeAgent.value === 'plan') {
+    return {
+      role: 'ai',
+      content: '已进入施工方案编制。方案将依次经过企业模板确认、目录确认、Evidence 检索、自动检查和最终人工审核。'
+    }
+  }
   return {
     role: 'ai',
     content: '你好，我是智能 AI 建筑辅助功能。\n我可以为您查找项目资料、查询工程规范、编制施工方案。请告诉我您想处理的项目或问题。',
     actions: [
       { id: 'project', label: '查找项目资料', icon: Search },
       { id: 'standard', label: '查询工程规范', icon: Reading },
-      { id: 'plan', label: '编制施工方案', icon: EditPen, disabled: true }
+      { id: 'plan', label: '编制施工方案', icon: EditPen }
     ]
   }
 }
@@ -455,6 +556,10 @@ async function loadWorkspace() {
 }
 
 async function loadConversation() {
+  if (activeAgent.value === 'plan') {
+    await loadLatestPlanTask()
+    return
+  }
   const storedId = workspace.getConversation(projectId.value, activeAgent.value)
   if (!storedId) return
   try {
@@ -587,12 +692,19 @@ function openEvidencePanel() {
 }
 
 function newConversation() {
+  window.clearTimeout(planPollTimer)
+  planTask.value = null
+  planAnswerMessage = null
   workspace.clearConversation(projectId.value, activeAgent.value)
   conversationId.value = ''
   resetConversationView()
 }
 
 function resetConversationView() {
+  window.clearTimeout(planPollTimer)
+  planDecisionOpen.value = false
+  planTask.value = null
+  planAnswerMessage = null
   messages.value = [createWelcomeMessage()]
   question.value = ''
   thinking.value = false
@@ -612,12 +724,141 @@ function handleAssistantAction(action) {
     selectAgent('standard')
     return
   }
+  if (action.id === 'plan') {
+    selectAgent('plan')
+    return
+  }
   messages.value.push({ role: 'user', content: action.label })
   messages.value.push({
     role: 'ai',
     content: '请直接输入项目名称、所在地区或项目类型，我会为您推荐最可能的项目。'
   })
   nextTick(scrollToBottom)
+}
+
+function planStageMessage(task) {
+  const labels = {
+    queued: '方案任务已排队', processing: '正在检索依据并生成方案',
+    template_confirmation: '等待确认企业模板',
+    outline_confirmation: '等待确认方案目录',
+    final_review: '等待专业人员最终审核', completed: '方案文档已生成',
+    failed: '方案任务失败', cancelled: '方案任务已取消'
+  }
+  return labels[task.current_stage] || '方案任务处理中'
+}
+
+function ensurePlanMessage() {
+  if (planAnswerMessage && messages.value.includes(planAnswerMessage)) return planAnswerMessage
+  planAnswerMessage = { role: 'ai', content: '', evidences: [], planDownloads: null }
+  messages.value.push(planAnswerMessage)
+  return planAnswerMessage
+}
+
+async function syncPlanTask(task) {
+  planTask.value = task
+  const message = ensurePlanMessage()
+  stage.value = planStageMessage(task)
+  const taskEvidences = [
+    ...(task.project_evidences || []), ...(task.standard_evidences || [])
+  ]
+  if (taskEvidences.length) {
+    message.evidences = taskEvidences
+    await setEvidences(taskEvidences)
+    contextMode.value = 'evidence'
+  }
+  if (task.status === 'WAITING_HUMAN') {
+    message.content = planStageMessage(task) + '。'
+    selectedTemplateId.value = task.human_payload.templates && task.human_payload.templates.length
+      ? task.human_payload.templates[0].document_id : '__generic__'
+    planOutline.value = [...(task.human_payload.outline || task.outline || [])]
+    planComment.value = ''
+    planDecisionOpen.value = true
+  } else if (task.status === 'COMPLETED') {
+    planDecisionOpen.value = false
+    message.content = task.final_content || '施工方案已完成审核并生成文档。'
+    message.planDownloads = task.download_urls || null
+  } else if (task.status === 'FAILED' || task.status === 'CANCELLED') {
+    planDecisionOpen.value = false
+    message.content = task.status === 'CANCELLED'
+      ? '方案任务已取消。' : '方案任务失败：' + (task.error || '未知错误')
+  } else {
+    message.content = planStageMessage(task) + '，当前进度 ' + task.progress + '%。'
+  }
+  await scrollToBottom()
+}
+
+async function pollPlanTask(taskId) {
+  window.clearTimeout(planPollTimer)
+  const task = await request('GET', '/projects/' + projectId.value + '/tasks/' + taskId)
+  await syncPlanTask(task)
+  if (['PENDING', 'RUNNING'].includes(task.status)) {
+    planPollTimer = window.setTimeout(() => {
+      pollPlanTask(taskId).catch(error => {
+        ensurePlanMessage().content = '任务状态更新失败：' + error.message
+      })
+    }, 1000)
+  }
+}
+
+async function startPlanTask(query) {
+  planDecisionOpen.value = false
+  planAnswerMessage = null
+  const task = await request('POST', '/projects/' + projectId.value + '/plans', {
+    request: query
+  })
+  await syncPlanTask(task)
+  await pollPlanTask(task.task_id)
+}
+
+async function loadLatestPlanTask() {
+  try {
+    const data = await request('GET', '/projects/' + projectId.value + '/tasks?limit=1')
+    if (!data.items || !data.items.length) return
+    planAnswerMessage = null
+    const task = await request(
+      'GET', '/projects/' + projectId.value + '/tasks/' + data.items[0].task_id)
+    await syncPlanTask(task)
+    if (['PENDING', 'RUNNING'].includes(task.status)) await pollPlanTask(task.task_id)
+  } catch (error) {
+    ElMessage.error('无法恢复方案任务：' + error.message)
+  }
+}
+
+async function submitPlanDecision(action) {
+  if (!planTask.value || planDecisionLoading.value) return
+  if (action === 'return_modify' && !planComment.value.trim()) {
+    ElMessage.warning('请填写具体修改意见')
+    return
+  }
+  const payload = { action, comment: planComment.value.trim() }
+  if (action === 'select_template') payload.template_id = selectedTemplateId.value
+  if (action === 'confirm' || action === 'return_modify') {
+    payload.outline = planOutline.value.map(item => item.trim()).filter(Boolean)
+  }
+  planDecisionLoading.value = true
+  try {
+    const task = await request(
+      'POST', '/projects/' + projectId.value + '/tasks/' + planTask.value.task_id + '/resume',
+      payload)
+    planDecisionOpen.value = false
+    await syncPlanTask(task)
+    await pollPlanTask(task.task_id)
+  } catch (error) {
+    ElMessage.error('方案任务恢复失败：' + error.message)
+  } finally {
+    planDecisionLoading.value = false
+  }
+}
+
+async function openPlanDocument(path) {
+  if (!path) return
+  try {
+    const blobUrl = await fetchProtectedBlobUrl(path)
+    window.open(blobUrl, '_blank', 'noopener,noreferrer')
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
+  } catch (error) {
+    ElMessage.error('无法打开方案文档：' + error.message)
+  }
 }
 
 async function findProjectCandidates(query) {
@@ -679,13 +920,24 @@ async function ask() {
     await scrollToBottom()
     return
   }
-  const targetAgent = decision && decision.intent === 'standard'
-    ? 'standard' : activeAgent.value
+  const targetAgent = decision && ['standard', 'plan'].includes(decision.intent)
+    ? decision.intent : activeAgent.value
   if (targetAgent !== activeAgent.value) {
     activeAgent.value = targetAgent
     conversationId.value = workspace.getConversation(
       projectId.value, activeAgent.value)
     selectedFolderId.value = ''
+  }
+  if (activeAgent.value === 'plan') {
+    try {
+      await startPlanTask(query)
+    } catch (error) {
+      messages.value.push({ role: 'ai', content: '方案任务创建失败：' + error.message })
+    } finally {
+      thinking.value = false
+      await scrollToBottom()
+    }
+    return
   }
   stage.value = '正在分析问题'
   ++evidenceLoadVersion
@@ -905,6 +1157,7 @@ watch(projectId, async () => {
 
 onBeforeUnmount(() => {
   window.clearTimeout(documentPollTimer)
+  window.clearTimeout(planPollTimer)
   ++evidenceLoadVersion
   revokeEvidenceUrls()
   clearPreview()
@@ -945,6 +1198,18 @@ onBeforeUnmount(() => {
 .project-suggestions strong { font-size: 12px; }
 .project-suggestions small { color: #7a8594; font-size: 10px; }
 .fallback { margin-top: 10px; padding-left: 9px; border-left: 3px solid #d69e2e; color: #8a5a12; }
+.plan-downloads { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.decision-message { margin: 0 0 16px; color: #52606d; line-height: 1.6; }
+.template-options { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.template-options :deep(.el-radio) { width: 100%; height: auto; min-height: 40px; margin: 0; padding: 9px 12px; }
+.outline-editor { max-height: 420px; overflow-y: auto; }
+.outline-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 34px; align-items: center; gap: 8px; margin-bottom: 8px; }
+.outline-row > span { color: #7a8594; font-size: 12px; text-align: right; }
+.review-warnings { margin: 14px 0; padding: 12px 0; border-bottom: 1px solid #e2e6ea; }
+.review-warnings ul { max-height: 160px; margin: 8px 0 0; padding-left: 20px; overflow-y: auto; color: #7a4b16; font-size: 12px; line-height: 1.7; }
+.plan-preview { margin-top: 14px; border-top: 1px solid #e2e6ea; padding-top: 12px; }
+.plan-preview summary { color: #1f5fbf; cursor: pointer; font-size: 13px; }
+.plan-preview pre { max-height: 360px; margin: 10px 0 0; padding: 12px; overflow: auto; background: #f6f8fa; color: #344054; font: inherit; font-size: 12px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .stage-line { color: #667085; }
 .stage-dot { width: 7px; height: 7px; display: inline-block; margin-right: 8px; border-radius: 50%; background: #2f6fc7; animation: pulse 1.2s infinite; }
 .composer { margin: 0 20px 16px; padding: 10px 12px 8px; border: 1px solid #cfd7e2; border-radius: 7px; background: #fff; box-shadow: 0 4px 16px rgba(31, 45, 61, .08); }

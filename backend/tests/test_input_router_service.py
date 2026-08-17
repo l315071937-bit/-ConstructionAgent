@@ -67,7 +67,21 @@ def test_明确规范和方案请求进入对应Agent路由(monkeypatch):
         "type": "AGENT_ROUTE", "intent": "standard", "available": True,
     }
     assert plan["intent"] == "plan"
-    assert plan["available"] is False
+    assert plan["available"] is True
+
+
+def test_方案模式下普通输入固定进入方案Agent(monkeypatch):
+    def should_not_search_projects(*args):
+        raise AssertionError("plan mode must not search project names")
+
+    monkeypatch.setattr(input_router_service.project_service,
+                        "suggest_projects", should_not_search_projects)
+
+    result = input_router_service.route_input(
+        None, 7, "编制地下室防水方案", active_agent="plan")
+
+    assert result == {
+        "type": "AGENT_ROUTE", "intent": "plan", "available": True}
 
 
 def test_规范模式下普通问题固定进入规范Agent(monkeypatch):
